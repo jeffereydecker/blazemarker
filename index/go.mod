@@ -1,11 +1,11 @@
-module github.com/jeffereydecker/blazemarker/main
+module github.com/jeffereydecker/blazemarker/index
 
 go 1.22.5
 
 require (
-	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-00010101000000-000000000000
-	github.com/jeffereydecker/blazemarker/blog_db v0.0.0-00010101000000-000000000000
-	github.com/jeffereydecker/blazemarker/gallery_db v0.0.0-00010101000000-000000000000
+	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721023413-f4c6ed51da8c
+	github.com/jeffereydecker/blazemarker/blog_db v0.0.0-20240721023413-f4c6ed51da8c
+	github.com/jeffereydecker/blazemarker/gallery_db v0.0.0-20240721023413-f4c6ed51da8c
 	github.com/tg123/go-htpasswd v1.2.2
 )
 
@@ -15,4 +15,3 @@ require (
 	golang.org/x/crypto v0.17.0 // indirect
 	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 )
-
