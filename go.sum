@@ -2,6 +2,8 @@ github.com/disintegration/imaging v1.6.2 h1:w1LecBlG2Lnp8B3jk5zSuNqd7b4DXhcjwek1
 github.com/disintegration/imaging v1.6.2/go.mod h1:44/5580QXChDfwIclfc/PCwrr44amcmDAg8hxG0Ewe4=
 github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721023413-f4c6ed51da8c h1:2jjiWaPDAIPB/Ut9dTbKw4/TfUysZyIt71VBeRZn5ZQ=
 github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721023413-f4c6ed51da8c/go.mod h1:AxMZ9nPdqJWbvmZwj0dcIBX7WAoNLqxc/AtYcMRvgL4=
+github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721122001-b8c4a7e60c6b h1:D5/CPWTI8xpDWTl8zBxNwdcv6exA1leQJdjwiN153LU=
+github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721122001-b8c4a7e60c6b/go.mod h1:AxMZ9nPdqJWbvmZwj0dcIBX7WAoNLqxc/AtYcMRvgL4=
 github.com/jeffereydecker/blazemarker/blog_db v0.0.0-20240721023413-f4c6ed51da8c h1:PxzasVmKyPXj6A7AZgfIYTfX1hY2WWJVm2/0kwYm3n4=
 github.com/jeffereydecker/blazemarker/blog_db v0.0.0-20240721023413-f4c6ed51da8c/go.mod h1:hh5BXXo9yx0bGHTC7pLnIVKHvzsHh7nIILb63KowXFY=
 github.com/jeffereydecker/blazemarker/gallery_db v0.0.0-20240721023413-f4c6ed51da8c h1:YIQI4CRjVn+MHWZQCJFldrRv03HiFfDxP3xoNeon7tA=
