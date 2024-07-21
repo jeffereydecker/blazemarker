@@ -1,0 +1,70 @@
+
+{{define "scripts"}}{{end}}
+{{ define "nav_body" }}
+
+
+<div class="container text-center">
+
+  <header>
+    <h2>{{ .Title }}</h2>
+      <!--
+	  <div>
+            <p><span>Jefferey Decker</span></p>
+         <p><a ---
+
+
+	       ef="." rel="bookmark"><time datetime="2023-07-25T14:26:00-03:00">2023-06-25 14:26</time></a></p>
+	  </div>
+	  -->
+  </header>
+
+
+  <div class="row" id="gallery" data-bs-toggle="modal" data-bs-target="#exampleModal">
+
+    {{ if eq (len .Albums) 0 }}
+    nothing to see here
+    {{ end }}
+
+    {{ range .Albums }}
+    
+    <div class="col-12 col-sm-6 col-lg-3">
+      <figure class="figure">
+	<a href="album?name={{ .Name }}">
+	  <img class="figure-img img-fluid rounded" src="{{ .Path }}" data-bs-target="#carouselExample" data-bs-slide-to="{{ .Index }}">
+	  <figcaption class="figure-caption text-center">{{ .Name }}</figcaption>
+	</a>
+      </figure>
+    </div>
+  
+    {{ end }}
+  
+  </div>
+
+  <nav aria-label="Gallery Navigation">
+  <ul class="pagination">
+    <li class="page-item">
+      <a class="page-link" href="#" aria-label="Previous">
+        <span aria-hidden="true">&laquo;</span>
+      </a>
+    </li>
+    <li class="page-item"><a class="page-link" href="#">1</a></li>
+    <li class="page-item"><a class="page-link" href="#">2</a></li>
+    <li class="page-item"><a class="page-link" href="#">3</a></li>
+    <li class="page-item">
+      <a class="page-link" href="#" aria-label="Next">
+        <span aria-hidden="true">&raquo;</span>
+      </a>
+    </li>
+  </ul>
+</nav>
+
+</div>
+
+{{ end }}
+
+
+  
+
+
+
+

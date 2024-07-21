@@ -1,0 +1,26 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Logs
+*.log
+
+
+#Emacs temp files
+*~
+
+
+# specific data
+/bootstrap-5.3.0-dist/
+/tinymce/
+/photos/
+/blaze_auth/
+/articles/
+/shared/
+/static/
+/logs/
+	
+

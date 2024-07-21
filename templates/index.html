@@ -1,0 +1,56 @@
+{{define "scripts"}}{{end}}
+{{ define "nav_body" }}
+
+
+<div class="container text-center">
+  <header>
+    <h2>{{ .Title }}</h2>
+      <!--
+	  <div>
+            <p><span>Jefferey Decker</span></p>
+         <p><a ---
+	       ef="." rel="bookmark"><time datetime="2023-07-25T14:26:00-03:00">2023-06-25 14:26</time></a></p>
+	  </div>
+	  -->
+  </header>
+</div>
+
+<div class="container mt-5">
+  <div class="row">
+    <div class="col-md-12">
+      <div class="card mb-4">
+	{{ if eq (len .Articles) 0 }}
+	<h2> No articles</h2>
+	{{ end }}
+	{{range .Articles}}
+	<div class="card-body blazemarker-bg-card-body">
+	  <h2 class="card-title">{{.Title}}</h2>
+	  <p class="card-text">{{.Content}} </p>
+	</div>
+        <div class="card-footer text-muted">
+          Posted on {{.Date}} by {{.Author}}
+        </div>
+	{{end}}
+      </div>
+    </div>
+  </div>
+</div>
+
+       
+<footer class="py-4 bg-light mt-auto">
+  <div class="container">
+    <p class="m-0 text-center text-muted">Blazemarker</p>
+  </div>
+</footer>
+
+
+
+{{end}}
+
+
+
+  
+
+
+
+
