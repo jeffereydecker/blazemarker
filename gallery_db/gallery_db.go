@@ -9,8 +9,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/jeffereydecker/blazemarker/blaze_log"
 	"github.com/disintegration/imaging"
+	"github.com/jeffereydecker/blazemarker/blaze_log"
+	"gorm.io/gorm"
 )
 
 var logger = blaze_log.GetLogger()
@@ -52,18 +53,20 @@ var sitePhotoFormatsHeight = map[string]int{
 }
 
 type Album struct {
-	Index          int      `json:"index"`
-	Name           string   `json:"name"`
-	Path           string   `json:"path"`
-	SitePhotos     []*Photo `json:"site_photos"`
-	OriginalPhotos []*Photo `json:"original_photos"`
+	gorm.Model
+	Name           string  `json:"name"`
+	Path           string  `json:"path"`
+	SitePhotos     []Photo `json:"site_photos" gorm:"foreignKey:ID"`
+	OriginalPhotos []Photo `json:"original_photos" gorm:"foreignKey:ID"`
 }
 
 type Photo struct {
-	ID    uint   `gorm:"primaryKey" json:"id"`
-	Index int    `json:"index"`
-	Name  string `json:"name"`
-	Path  string `json:"path"`
+	gorm.Model
+	AlbumID uint   `json:"album_id"`
+	Index   int    `json:"index"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Type    string `json:"type" gorm:"index"` // Added Type field to distinguish between SitePhotos and OriginalPhotos
 }
 
 var jpg_expression = `\.(?i)jpg`
@@ -273,33 +276,34 @@ func findOrAddAlbumCover(albumPath string, album os.DirEntry, photoSize string) 
 	return "", nil
 }
 
-func findOrAddSitePhoto(photoPath string, photoName string, photoSize string) *Photo {
+func findOrAddSitePhoto(photoPath string, photoName string, photoSize string) (Photo, bool) {
 	//TODO: Replace photo os.FileInfo with pagePhoto *Photo
-	var pagePhoto *Photo = nil
+	var pagePhoto Photo
+	var found = false
 
 	logger.Debug("findOrAddSitePhoto", "photoPath", photoPath, "photoName", photoName)
 
 	if sitePhotoDirPath, sitePhotoDir := findOrAddSitePhotoDir(photoPath); len(sitePhotoDirPath) > 0 && sitePhotoDir != nil {
 		if foundSitePhotoPath, foundSitePhoto := findSitePhoto(sitePhotoDirPath, sitePhotoDir, &photoName, photoSize, "-gp"); len(foundSitePhotoPath) > 0 && foundSitePhoto != nil {
 
-			pagePhoto = new(Photo)
 			pagePhoto.Name = photoName
 			pagePhoto.Path = foundSitePhotoPath
+			found = true
 
 		} else {
 			if newSitePhotoPath, newSitePhoto := createSitePhoto(photoPath+photoName, photoName, sitePhotoDirPath, sitePhotoDir, "-gp", photoSize); len(newSitePhotoPath) > 0 && newSitePhoto != nil {
-				pagePhoto = new(Photo)
 				pagePhoto.Name = photoName
 				pagePhoto.Path = newSitePhotoPath
+				found = true
 			}
 		}
 
 	}
 
-	return pagePhoto
+	return pagePhoto, found
 }
 
-func GetAllAlbums() []*Album {
+func GetAllAlbumsFromFiles() []Album {
 	photoPath := "../photos/galleries/"
 
 	files, err := os.ReadDir(photoPath)
@@ -308,28 +312,45 @@ func GetAllAlbums() []*Album {
 		return nil
 	}
 
-	var albumIndex = 0
+	var albumIndex = 1
 
 	logger.Debug("GetAllAlbums()", "albumIndex", albumIndex)
-	albums := make([]*Album, 0)
+	albums := make([]Album, 0)
 	for _, fileAlbum := range files {
 		if fileAlbum.IsDir() {
 			if albumCoverPath, albumCover := findOrAddAlbumCover(photoPath, fileAlbum, "-xs"); len(albumCoverPath) > 0 && albumCover != nil {
 				//TODO: wider use of album
-				album := new(Album)
-				album.Index = albumIndex
-				albumIndex = albumIndex + 1
+				var album Album
+				album.ID = uint(albumIndex)
 				album.Name = fileAlbum.Name()
 				album.Path = albumCoverPath
 				albums = append(albums, album)
+				albumIndex = albumIndex + 1
 			}
 		}
+	}
+
+	for i := range albums {
+		albums[i].SitePhotos, albums[i].OriginalPhotos = GetAlbumPhotosFromFiles(albums[i].Name)
+	}
+	return albums
+}
+
+func GetAllAlbums(db *gorm.DB) []Album {
+	// Automatically migrate the schema
+	db.AutoMigrate(&Album{}, &Photo{})
+
+	// Read all albums
+	var albums []Album
+	result := db.Find(&albums)
+	if result.Error != nil {
+		logger.Error("Error reading albums:", "result.Error", result.Error)
 	}
 
 	return albums
 }
 
-func GetAlbumPhotos(albumName string) (sitePhotos []*Photo, originalPhotos []*Photo) {
+func GetAlbumPhotosFromFiles(albumName string) (sitePhotos []Photo, originalPhotos []Photo) {
 
 	path := "../photos/galleries/" + albumName + "/"
 
@@ -341,24 +362,56 @@ func GetAlbumPhotos(albumName string) (sitePhotos []*Photo, originalPhotos []*Ph
 		return nil, nil
 	}
 
-	sitePhotos = make([]*Photo, 0)
-	originalPhotos = make([]*Photo, 0)
+	sitePhotos = make([]Photo, 0)
+	originalPhotos = make([]Photo, 0)
 
 	var photoIndex = 0
-
+	//loop though original photos
 	for _, photo := range photos {
 		if !photo.IsDir() && jpg_re.FindStringIndex(photo.Name()) != nil {
-			if pagePhoto := findOrAddSitePhoto(path, photo.Name(), "-xl"); pagePhoto != nil {
+			// for each original photo, create a site photo
+			if pagePhoto, found := findOrAddSitePhoto(path, photo.Name(), "-xl"); found {
 				pagePhoto.Index = photoIndex
+				pagePhoto.Type = "page"
 				sitePhotos = append(sitePhotos, pagePhoto)
-				pageOriginalPhoto := new(Photo)
-				pageOriginalPhoto.Name = photo.Name()
-				pageOriginalPhoto.Path = path + photo.Name()
-				pageOriginalPhoto.Index = photoIndex
-				originalPhotos = append(originalPhotos, pageOriginalPhoto)
+				var originalPhoto Photo
+				originalPhoto.Name = photo.Name()
+				originalPhoto.Path = path + photo.Name()
+				originalPhoto.Index = photoIndex
+				originalPhoto.Type = "original"
+				originalPhotos = append(originalPhotos, originalPhoto)
 				photoIndex = photoIndex + 1
 			}
 		}
 	}
+	return sitePhotos, originalPhotos
+}
+
+func GetAlbumPhotos(db *gorm.DB, albumName string) (sitePhotos []Photo, originalPhotos []Photo) {
+	// Automatically migrate the schema
+	db.AutoMigrate(&Album{}, &Photo{})
+
+	// Find the album by name
+	var album Album
+	result := db.Where("name = ?", albumName).First(&album)
+	if result.Error != nil {
+		logger.Error("Error reading album:", "albumName", albumName, "result.Error", result.Error)
+		return nil, nil
+	}
+
+	// Read site photos for this album
+	sitePhotos = make([]Photo, 0)
+	result = db.Where("album_id = ? AND type = ?", album.ID, "page").Find(&sitePhotos)
+	if result.Error != nil {
+		logger.Error("Error reading site photos:", "album_id", album.ID, "result.Error", result.Error)
+	}
+
+	// Read original photos for this album
+	originalPhotos = make([]Photo, 0)
+	result = db.Where("album_id = ? AND type = ?", album.ID, "original").Find(&originalPhotos)
+	if result.Error != nil {
+		logger.Error("Error reading original photos:", "album_id", album.ID, "result.Error", result.Error)
+	}
+
 	return sitePhotos, originalPhotos
 }

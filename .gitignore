@@ -8,11 +8,17 @@
 # Logs
 *.log
 
+# Database
+*.db
+
+# Delve
+__debug_bin*
+
 
 #Emacs temp files
 *~
 
-
+   
 # specific data
 /bootstrap-5.3.0-dist/
 /tinymce/
@@ -22,5 +28,13 @@
 /shared/
 /static/
 /logs/
+/data/
+.DS_Store   
+.vscode
+!launch.json
+!tasks.json
+
+
+
 	
 

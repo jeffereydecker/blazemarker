@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
+	"github.com/jeffereydecker/blazemarker/blaze_db"
 	"github.com/jeffereydecker/blazemarker/blaze_log"
 	"github.com/jeffereydecker/blazemarker/blog_db"
 	"github.com/jeffereydecker/blazemarker/gallery_db"
@@ -23,15 +26,16 @@ type Photo = gallery_db.Photo
 type Album = gallery_db.Album
 
 var logger *slog.Logger = blaze_log.GetLogger()
+var db *gorm.DB = blaze_db.GetDB()
 
 type Blog struct {
-	Title    string     `json:"title"`
-	Articles []*Article `json:"articles"`
+	Title    string    `json:"title"`
+	Articles []Article `json:"articles"`
 }
 
 type Gallery struct {
-	Title  string   `json:"title"`
-	Albums []*Album `json:"albums"`
+	Title  string  `json:"title"`
+	Albums []Album `json:"albums"`
 }
 
 func servNow(w http.ResponseWriter, r *http.Request) {
@@ -49,8 +53,8 @@ func servNow(w http.ResponseWriter, r *http.Request) {
 	logger.Debug("servNow()")
 
 	pageData := new(Blog)
-	pageData.Title = "Jefferey Decker"
-	pageData.Articles = blog_db.GetNowArticles()
+	pageData.Title = "What I'm Doing Now"
+	pageData.Articles = blog_db.GetNowArticles(db)
 
 	t, _ := template.ParseFiles("../templates/base.html", "../templates/index.html")
 	err := t.Execute(w, pageData)
@@ -77,7 +81,7 @@ func servIndex(w http.ResponseWriter, r *http.Request) {
 
 	pageData := new(Blog)
 	pageData.Title = "Jefferey Decker"
-	pageData.Articles = blog_db.GetIndexArticles()
+	pageData.Articles = blog_db.GetIndexArticles(db)
 
 	t, _ := template.ParseFiles("../templates/base.html", "../templates/index.html")
 	err := t.Execute(w, pageData)
@@ -140,7 +144,7 @@ func servGallery(w http.ResponseWriter, r *http.Request) {
 
 	pageData := new(Gallery)
 	pageData.Title = "Decker Photo Albums"
-	pageData.Albums = gallery_db.GetAllAlbums()
+	pageData.Albums = gallery_db.GetAllAlbums(db)
 
 	t, _ := template.ParseFiles("../templates/base.html", "../templates/gallery.html")
 	err := t.Execute(w, pageData)
@@ -164,7 +168,7 @@ func servAlbum(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("HTTP Request Filter Not Available: name")
 		return
 	}
-	pageData.SitePhotos, pageData.OriginalPhotos = gallery_db.GetAlbumPhotos(pageData.Name)
+	pageData.SitePhotos, pageData.OriginalPhotos = gallery_db.GetAlbumPhotos(db, pageData.Name)
 
 	logger.Debug("servAlbum()", "r.URL.Path", r.URL.Path, "pageData.Name", pageData.Name, "pageData.Path", pageData.Path)
 
@@ -207,15 +211,16 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Form parsing error", http.StatusBadRequest)
 			return
 		}
-		article := new(Article)
+		var article Article
 		article.Title = r.FormValue("title")
 		article.Content = template.HTML(r.FormValue("content"))
 		article.Date = time.Now().Format("2006-01-02")
 		article.Author = username
+		article.IsNow = r.FormValue("is_now") == "on"
 
-		if ok := blog_db.SaveArticle(article); !ok {
+		if ok := blog_db.SaveArticle(db, article); !ok {
 			logger.Error("Failed to save article", "article.Title", article.Title, "article.Author", article.Title)
-			return
+
 		}
 
 		http.Redirect(w, r, "/articles", http.StatusFound)
@@ -236,7 +241,8 @@ func servArticles(w http.ResponseWriter, r *http.Request) {
 
 	logger.Debug("servArticles()")
 
-	pageData.Articles = blog_db.GetAllArticles()
+	pageData.Articles = blog_db.GetAllArticles(db)
+
 	blog_db.SortByDate(pageData.Articles)
 
 	t, _ := template.ParseFiles("../templates/base.html", "../templates/articles.html")
