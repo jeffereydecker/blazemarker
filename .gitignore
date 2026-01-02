@@ -26,7 +26,6 @@ __debug_bin*
 /blaze_auth/
 /articles/
 /shared/
-/static/
 /logs/
 /data/
 .DS_Store   
