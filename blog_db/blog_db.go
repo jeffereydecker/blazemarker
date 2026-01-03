@@ -21,11 +21,13 @@ func (a ByDate) Less(i, j int) bool { return a[i].Date > a[j].Date } // Sorting 
 
 type Article struct {
 	gorm.Model
-	Title   string        `json:"title"`
-	Content template.HTML `json:"content"`
-	Author  string        `json:"author"`
-	Date    string        `json:"date"`
-	IsNow   bool          `json:"is_now"`
+	Title     string        `json:"title"`
+	Content   template.HTML `json:"content"`
+	Author    string        `json:"author"`
+	Date      string        `json:"date"`
+	IsNow     bool          `json:"is_now"`
+	IsPrivate bool          `json:"is_private"`
+	IsIndex   bool          `json:"is_index"`
 }
 
 //type Article struct {
@@ -69,9 +71,9 @@ func GetAllArticles(db *gorm.DB) []Article {
 	// Automatically migrate the schema
 	db.AutoMigrate(&Article{})
 
-	// Read all articles
+	// Read all public articles only (including NULL as false)
 	var articles []Article
-	result := db.Find(&articles)
+	result := db.Where("is_private = ? OR is_private IS NULL", false).Find(&articles)
 	if result.Error != nil {
 		logger.Error("Error reading articles:", "result.Error", result.Error)
 	}
@@ -106,11 +108,11 @@ func GetIndexArticles(db *gorm.DB) []Article {
 	// Automatically migrate the schema
 	db.AutoMigrate(&Article{})
 
-	// Read all articles
+	// Read articles marked as Index articles (not private)
 	var articles []Article
-	result := db.Where("Title =?", "Welcome to Blazemarker").Find(&articles)
+	result := db.Where("is_index = ? AND (is_private = ? OR is_private IS NULL)", true, false).Order("date DESC").Find(&articles)
 	if result.Error != nil {
-		logger.Error("Error reading articles:", "result.Error", result.Error)
+		logger.Error("Error reading index articles:", "result.Error", result.Error)
 	}
 
 	return (articles)
@@ -142,12 +144,65 @@ func GetNowArticles(db *gorm.DB) []Article {
 	// Automatically migrate the schema
 	db.AutoMigrate(&Article{})
 
-	// Read all articles where IsNow is true
+	// Read only the most recent "Now" article (not private)
 	var articles []Article
-	result := db.Where("is_now = ?", true).Find(&articles)
+	result := db.Where("is_now = ? AND (is_private = ? OR is_private IS NULL)", true, false).Order("date DESC").Limit(1).Find(&articles)
 
 	if result.Error != nil {
 		logger.Error("Error reading articles:", "result.Error", result.Error)
+	}
+
+	return (articles)
+}
+
+// GetPrivateArticles retrieves all private articles for a specific author
+func GetPrivateArticles(db *gorm.DB, author string) []Article {
+
+	// Automatically migrate the schema
+	db.AutoMigrate(&Article{})
+
+	// Read all private articles for this author
+	var articles []Article
+	result := db.Where("is_private = ? AND author = ?", true, author).Find(&articles)
+
+	if result.Error != nil {
+		logger.Error("Error reading private articles:", "result.Error", result.Error)
+	}
+
+	return (articles)
+}
+
+// GetMyArticles retrieves all non-private articles for a specific author
+func GetMyArticles(db *gorm.DB, author string) []Article {
+
+	// Automatically migrate the schema
+	db.AutoMigrate(&Article{})
+
+	// Read all non-private articles for this author (including NULL as false)
+	var articles []Article
+	result := db.Where("(is_private = ? OR is_private IS NULL) AND author = ?", false, author).Find(&articles)
+
+	if result.Error != nil {
+		logger.Error("Error reading my articles:", "result.Error", result.Error)
+	}
+
+	return (articles)
+}
+
+// SearchArticles searches for articles by keyword in title or content
+func SearchArticles(db *gorm.DB, keyword string) []Article {
+
+	// Automatically migrate the schema
+	db.AutoMigrate(&Article{})
+
+	// Search in title and content, exclude private articles
+	var articles []Article
+	searchPattern := "%" + keyword + "%"
+	result := db.Where("(is_private = ? OR is_private IS NULL) AND (title LIKE ? OR content LIKE ?)",
+		false, searchPattern, searchPattern).Find(&articles)
+
+	if result.Error != nil {
+		logger.Error("Error searching articles:", "result.Error", result.Error)
 	}
 
 	return (articles)
@@ -184,4 +239,51 @@ func SaveArticle(db *gorm.DB, article Article) bool {
 	}
 
 	return (true)
+}
+
+// GetArticleByID retrieves a single article by its ID
+func GetArticleByID(db *gorm.DB, id uint) (Article, error) {
+	var article Article
+	result := db.First(&article, id)
+	if result.Error != nil {
+		logger.Error("Error reading article by ID:", "id", id, "error", result.Error)
+		return Article{}, result.Error
+	}
+	return article, nil
+}
+
+// UpdateArticle updates an existing article in the database
+func UpdateArticle(db *gorm.DB, article Article) bool {
+	if result := db.Model(&article).Updates(article); result.Error != nil {
+		logger.Error("Failed to update article:", "id", article.ID, "error", result.Error)
+		return false
+	}
+	logger.Info("Article updated successfully", "id", article.ID, "title", article.Title)
+	return true
+}
+
+// DeleteArticle removes an article from the database by ID
+func DeleteArticle(db *gorm.DB, id uint) bool {
+	if result := db.Delete(&Article{}, id); result.Error != nil {
+		logger.Error("Failed to delete article:", "id", id, "error", result.Error)
+		return false
+	}
+	logger.Info("Article deleted successfully", "id", id)
+	return true
+}
+
+// UpdateArticleAndFile updates both database and JSON file
+func UpdateArticleAndFile(db *gorm.DB, article Article) bool {
+	// Update database
+	if !UpdateArticle(db, article) {
+		return false
+	}
+
+	// Update JSON file
+	if !SaveArticleToFile(article) {
+		logger.Error("Failed to save updated article to file", "id", article.ID, "title", article.Title)
+		return false
+	}
+
+	return true
 }

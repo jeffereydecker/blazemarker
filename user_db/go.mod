@@ -1,0 +1,15 @@
+module github.com/jeffereydecker/blazemarker/user_db
+
+go 1.23.0
+
+require (
+	gorm.io/gorm v1.25.7
+	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0
+)
+
+replace github.com/jeffereydecker/blazemarker/blaze_log => ../blaze_log
+
+require (
+	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/jinzhu/now v1.1.5 // indirect
+)

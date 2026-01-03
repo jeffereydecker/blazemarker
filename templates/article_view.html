@@ -1,0 +1,98 @@
+{{define "scripts"}}{{end}}
+{{ define "nav_body" }}
+
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <!-- Back to articles link -->
+      <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+          <li class="breadcrumb-item"><a href="/articles">← Back to Articles</a></li>
+          <li class="breadcrumb-item active" aria-current="page">{{ .Title }}</li>
+        </ol>
+      </nav>
+
+      <!-- Article content -->
+      {{ $profile := getUserProfile .Author }}
+      <article class="card shadow-sm mb-4">
+        <div class="card-body">
+          <h1 class="card-title mb-3">{{ .Title }}</h1>
+          
+          <div class="d-flex align-items-center mb-4">
+            <div class="me-3">
+              {{ if $profile.AvatarPath }}
+                <img src="{{ $profile.AvatarPath }}" alt="{{ .Author }}" class="rounded-circle" style="width: 48px; height: 48px; object-fit: cover;">
+              {{ else }}
+                <div class="rounded-circle bg-secondary d-inline-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
+                  <span class="text-white" style="font-size: 20px;">{{ slice .Author 0 1 | upper }}</span>
+                </div>
+              {{ end }}
+            </div>
+            <div class="text-muted">
+              <small>
+                Posted on {{ .Date }} by <strong>{{ if $profile.Handle }}{{ $profile.Handle }}{{ else }}{{ .Author }}{{ end }}</strong>
+                {{ if .IsNow }}
+                <span class="badge bg-primary ms-2">Now</span>
+                {{ end }}
+                {{ if .IsPrivate }}
+                <span class="badge bg-secondary ms-2">🔒 Private</span>
+                {{ end }}
+              </small>
+            </div>
+          </div>
+          
+          <div class="article-content">
+            {{ .Content }}
+          </div>
+        </div>
+
+        <!-- Action buttons at bottom -->
+        <div class="card-footer bg-light d-flex justify-content-end gap-2">
+          <a href="/article?id={{ .ID }}" 
+             class="btn btn-sm btn-outline-primary" 
+             title="Edit article">
+            ✎
+          </a>
+          <button type="button" 
+                  class="btn btn-sm btn-outline-danger" 
+                  data-bs-toggle="modal" 
+                  data-bs-target="#deleteModal" 
+                  title="Delete article">
+            🗑
+          </button>
+        </div>
+      </article>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteModalLabel">Delete Article</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong>{{ .Title }}</strong>?</p>
+        <p class="text-danger small">This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form action="/article/{{ .ID }}" method="POST" style="display: inline;">
+          <input type="hidden" name="_method" value="DELETE">
+          <button type="submit" class="btn btn-danger">Delete Permanently</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer class="py-4 bg-light mt-auto">
+  <div class="container">
+    <p class="m-0 text-center text-muted">Blazemarker</p>
+  </div>
+</footer>
+
+{{end}}

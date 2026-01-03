@@ -23,12 +23,24 @@
 	<h2> No articles</h2>
 	{{ end }}
 	{{range .Articles}}
+	{{ $profile := getUserProfile .Author }}
 	<div class="card-body blazemarker-bg-card-body">
 	  <h2 class="card-title">{{.Title}}</h2>
 	  <p class="card-text">{{.Content}} </p>
 	</div>
-        <div class="card-footer text-muted">
-          Posted on {{.Date}} by {{.Author}}
+        <div class="card-footer text-muted d-flex align-items-center">
+          <div class="me-2">
+            {{ if $profile.AvatarPath }}
+              <img src="{{ $profile.AvatarPath }}" alt="{{ .Author }}" class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;">
+            {{ else }}
+              <div class="rounded-circle bg-secondary d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                <span class="text-white" style="font-size: 14px;">{{ slice .Author 0 1 | upper }}</span>
+              </div>
+            {{ end }}
+          </div>
+          <div>
+            Posted on {{.Date}} by {{ if $profile.Handle }}{{ $profile.Handle }}{{ else }}{{ .Author }}{{ end }}
+          </div>
         </div>
 	{{end}}
       </div>

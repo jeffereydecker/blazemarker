@@ -1,12 +1,13 @@
 module github.com/jeffereydecker/blazemarker/index
 
-go 1.22.5
+go 1.23.0
 
 require (
 	github.com/jeffereydecker/blazemarker/blaze_db v0.0.0-00010101000000-000000000000
-	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721023413-f4c6ed51da8c
+	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0
 	github.com/jeffereydecker/blazemarker/blog_db v0.0.0-20240721140226-fd4ad63d62d4
 	github.com/jeffereydecker/blazemarker/gallery_db v0.0.0-20240721140226-fd4ad63d62d4
+	github.com/jeffereydecker/blazemarker/user_db v0.0.0-00010101000000-000000000000
 	github.com/tg123/go-htpasswd v1.2.2
 	gorm.io/gorm v1.25.11
 )
@@ -28,4 +29,5 @@ replace (
 	github.com/jeffereydecker/blazemarker/blaze_log => ../blaze_log
 	github.com/jeffereydecker/blazemarker/blog_db => ../blog_db
 	github.com/jeffereydecker/blazemarker/gallery_db => ../gallery_db
+	github.com/jeffereydecker/blazemarker/user_db => ../user_db
 )

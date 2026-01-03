@@ -1,0 +1,73 @@
+{{define "scripts"}}{{end}}
+
+{{ define "nav_body" }}
+
+<div class="container mt-4">
+  <div class="row">
+    <div class="col-md-8 offset-md-2">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h3>User Profile</h3>
+          {{ if .IsAdmin }}
+          <span class="badge bg-danger">Admin</span>
+          {{ end }}
+        </div>
+        <div class="card-body">
+          <form method="POST" action="/profile" enctype="multipart/form-data">
+            
+            <!-- Avatar Section -->
+            <div class="mb-4 text-center">
+              {{ if .AvatarPath }}
+                <img src="{{ .AvatarPath }}" alt="Avatar" class="rounded-circle mb-3" style="width: 150px; height: 150px; object-fit: cover;">
+              {{ else }}
+                <div class="rounded-circle bg-secondary d-inline-flex align-items-center justify-content-center mb-3" style="width: 150px; height: 150px;">
+                  <span class="text-white fs-1">{{ slice .Username 0 1 | upper }}</span>
+                </div>
+              {{ end }}
+              <div>
+                <label for="avatar" class="form-label">Upload New Avatar</label>
+                <input type="file" class="form-control" id="avatar" name="avatar" accept="image/*">
+                <small class="form-text text-muted">Recommended: Square image, at least 300x300 pixels</small>
+              </div>
+            </div>
+
+            <!-- Username (read-only) -->
+            <div class="mb-3">
+              <label for="username" class="form-label">Username</label>
+              <input type="text" class="form-control" id="username" name="username" value="{{ .Username }}" readonly>
+            </div>
+
+            <!-- Handle -->
+            <div class="mb-3">
+              <label for="handle" class="form-label">Handle</label>
+              <input type="text" class="form-control" id="handle" name="handle" value="{{ .Handle }}" placeholder="Your display name" required>
+              <small class="form-text text-muted">This will be used to identify you on articles</small>
+            </div>
+
+            <!-- Email -->
+            <div class="mb-3">
+              <label for="email" class="form-label">Email Address</label>
+              <input type="email" class="form-control" id="email" name="email" value="{{ .Email }}" placeholder="your.email@example.com">
+              <small class="form-text text-muted">Used for notifications</small>
+            </div>
+
+            <!-- Phone -->
+            <div class="mb-3">
+              <label for="phone" class="form-label">Phone Number</label>
+              <input type="tel" class="form-control" id="phone" name="phone" value="{{ .Phone }}" placeholder="+1 (555) 123-4567">
+              <small class="form-text text-muted">Used for SMS notifications</small>
+            </div>
+
+            <div class="d-grid gap-2">
+              <button type="submit" class="btn btn-primary">Save Profile</button>
+              <a href="/changepassword" class="btn btn-warning">Change Password</a>
+              <a href="/" class="btn btn-secondary">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ end }}

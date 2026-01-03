@@ -3,93 +3,466 @@
  *  Blazemarker.com stylesheet 
  */
 
-/ Use Bootstrap breakpoints for consistency.
-$bootstrap-sm: 576px;
-$bootstrap-md: 768px;
-$bootstrap-lg: 992px;
-$bootstrap-xl: 1200px;
-
-// Crop thumbnail images.
-
-#gallery {
-  img {
-    height: 75vw;
-    object-fit: cover;
-    
-    @media (min-width: $bootstrap-sm) {
-      height: 35vw;
-    }
-    
-    @media (min-width: $bootstrap-lg) {
-      height: 18vw;
-    }
-  }
+/* Modern system font stack for excellent typography and performance */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+  
+  /* Typography scale */
+  --font-size-base: 1rem;
+  --font-size-sm: 0.875rem;
+  --font-size-lg: 1.125rem;
+  
+  /* Line heights */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
 }
 
-// Crop images in the coursel
-.carousel-item {
-  img {
-    height: 60vw;
-    object-fit: cover;
-    
-    @media (min-width: $bootstrap-sm) {
-      height: 350px;
-    }
-  }
+/* Base typography */
+html {
+  font-size: 16px;
 }
 
-.blazemarker-bg-primary {
- background-image: linear-gradient(#6d94bf, #42f58d, 50%, #3e648d);
+body {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: #212529;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.blazemarker-bg-body {
-background-color: #e6eb54;
+/* Heading hierarchy */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+  margin-bottom: 0.75rem;
+  color: #1a1a1a;
 }
 
-
-.blazemarker-bg-card-body {
-background-color: #f2f5a2;
+h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
 }
 
-.blazemarker-modal-body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    padding: 0;
+h2 {
+  font-size: 2rem;
+  font-weight: 700;
 }
 
-.blazemarker-carousel-inner {
-    width: 100%;
-    max-height: 75vh;
+h3 {
+  font-size: 1.5rem;
 }
 
-.blazemarker-carousel-item img {
-    max-width: 100%;
-    max-height: 100vh;
-    margin: auto;
-    display: block;
+h4 {
+  font-size: 1.25rem;
 }
 
+h5 {
+  font-size: 1rem;
+  font-weight: 600;
+}
 
+h6 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ql-toolbar {
+  background-color: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-bottom: none;
+  border-radius: 0.375rem 0.375rem 0 0;
+  font-family: var(--font-sans);
+}
+
+/* Editor container */
+.ql-container {
+  background-color: #ffffff;
+  border: 1px solid #dee2e6;
+  border-radius: 0 0 0.375rem 0.375rem;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: #212529;
+}
+
+/* Editor text area */
+.ql-editor {
+  min-height: 300px;
+  padding: 1rem;
+  background-color: #ffffff;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+}
+
+/* Placeholder text */
+.ql-editor.ql-blank::before {
+  color: #6c757d;
+  font-style: italic;
+}
+
+/* Optional: Focus states for better UX */
+.ql-toolbar.ql-snow {
+  border-color: #86b7fe;
+}
+
+.ql-container.ql-snow.ql-focused {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Navigation links - black text instead of white */
+.blazemarker-bg-primary .nav-link {
+  color: #000 !important;
+  font-weight: 500;
+  font-family: var(--font-sans);
+}
+
+.blazemarker-bg-primary .nav-link:hover {
+  color: #333 !important;
+}
+
+/* Header styles */
 .blazemarker-header {
-  line-height: 1;
+  line-height: 1.2;
   border-bottom: 1px solid #e5e5e5;
+  padding: 1.5rem 0;
 }
 
 .blazemarker-header-logo {
-  font-family: Optima, Graphik, "Helvetica Neue", serif/*rtl:Amiri, Georgia, "Times New Roman", serif*/;
-  font-size: 2.25rem;
+  font-family: var(--font-sans);
+  font-size: 2rem;
+  font-weight: 700;
   text-decoration: none !important;
   color: #000 !important;
+  letter-spacing: -0.02em;
 }
 
-.blog-header-logo:hover {
+.blazemarker-header-logo:hover {
+  text-decoration: none;
+  color: #333 !important;
+}
+
+/* Color utilities */
+.blazemarker-bg-primary {
+  background-image: linear-gradient(to right, #91e39b, #6ecdfa);
+}
+
+.blazemarker-bg-body {
+  background-color: #fcf8f8;
+}
+
+.blazemarker-bg-card-body {
+  background-color: #ffffff;
+}
+
+/* Modal styles */
+.blazemarker-modal-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 0;
+}
+
+/* Carousel styles */
+.blazemarker-carousel-inner {
+  width: 100%;
+  max-height: 75vh;
+}
+
+.blazemarker-carousel-item img {
+  max-width: 100%;
+  max-height: 100vh;
+  margin: auto;
+  display: block;
+}
+
+/* Gallery image styles */
+#gallery img {
+  height: 75vw;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+}
+
+#gallery img:hover {
+  transform: scale(1.02);
+}
+
+@media (min-width: 576px) {
+  #gallery img {
+    height: 35vw;
+  }
+}
+
+@media (min-width: 992px) {
+  #gallery img {
+    height: 18vw;
+  }
+}
+
+/* Carousel item images */
+.carousel-item img {
+  height: 60vw;
+  object-fit: cover;
+}
+
+@media (min-width: 576px) {
+  .carousel-item img {
+    height: 350px;
+  }
+}
+
+/* Card typography */
+.card {
+  border: 1px solid #e5e5e5;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.card-title {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.card-text {
+  font-family: var(--font-sans);
+  color: #424242;
+  line-height: var(--line-height-relaxed);
+}
+
+.card-header {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.card-footer {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  background-color: #f8f9fa;
+  border-top: 1px solid #e5e5e5;
+}
+
+/* Form controls */
+.form-control,
+.form-select {
+  font-family: var(--font-sans);
+  border: 1px solid #dee2e6;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* Links and text utilities */
+a {
+  color: #0066cc;
   text-decoration: none;
 }
 
-body, h1, h2, h3, h4, h5, h6 {
-  font-family: Optima, Graphik, "Helvetica Neue", serif/*rtl:Amiri, Georgia, "Times New Roman", serif*/;
+a:hover {
+  color: #0052a3;
+  text-decoration: underline;
 }
 
+.text-muted {
+  font-family: var(--font-sans);
+  color: #6c757d !important;
+}
+
+.text-center {
+  font-family: var(--font-sans);
+}
+
+/* Figure captions */
+figcaption {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  color: #6c757d;
+  margin-top: 0.5rem;
+}
+
+/* Footer */
+footer {
+  font-family: var(--font-sans);
+  background-color: #f8f9fa;
+  border-top: 1px solid #e5e5e5;
+}
+
+footer p {
+  font-size: var(--font-size-sm);
+}
+
+/* Buttons */
+.btn {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+}
+
+/* Pagination */
+.pagination {
+  font-family: var(--font-sans);
+}
+
+.page-link {
+  color: #0066cc;
+  border: 1px solid #dee2e6;
+}
+
+.page-link:hover {
+  color: #0052a3;
+  background-color: #f8f9fa;
+  border-color: #dee2e6;
+}
+
+/* Lists */
+ul, ol {
+  font-family: var(--font-sans);
+  line-height: var(--line-height-relaxed);
+}
+
+li {
+  margin-bottom: 0.5rem;
+}
+
+/* Code blocks for monospace content */
+code, pre {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background-color: #f5f5f5;
+  border-radius: 0.25rem;
+}
+
+code {
+  padding: 0.125rem 0.25rem;
+}
+
+pre {
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+/* Article cards */
+.article-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.article-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.article-card a {
+  color: inherit;
+  text-decoration: none;
+  display: block;
+}
+
+.article-card a:hover {
+  color: inherit;
+}
+
+.article-preview {
+  max-height: 200px;
+  overflow: hidden;
+  position: relative;
+}
+
+.article-preview::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 50px;
+  background: linear-gradient(to bottom, transparent, white);
+  pointer-events: none;
+}
+
+/* Single article view */
+.article-content {
+  font-size: 1.125rem;
+  line-height: var(--line-height-relaxed);
+}
+
+.article-content h1,
+.article-content h2,
+.article-content h3 {
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.article-content p {
+  margin-bottom: 1rem;
+}
+
+.article-content a {
+  color: #0066cc;
+  text-decoration: underline;
+}
+
+
+/* Modern Article Cards */
+.article-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
+}
+
+.article-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+
+.article-card .card-body {
+  padding: 1.75rem;
+}
+
+.article-card .card-title {
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #212529;
+}
+
+.article-card .card-text {
+  color: #495057;
+  line-height: 1.7;
+  font-size: 1.1rem;
+}
+
+/* Truncate long content with ellipsis */
+.article-card .card-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;           /* Show ~4 lines */
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.article-card .card-footer {
+  background-color: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+  font-size: 0.9rem;
+  color: #6c757d;
+}
+
+/* Optional: Add a "Read more" link if content is truncated */
+.read-more {
+  font-weight: 600;
+  color: #0d6efd;
+}
+.read-more:hover {
+  text-decoration: underline;
+}
 

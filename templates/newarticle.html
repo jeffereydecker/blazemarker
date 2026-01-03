@@ -1,63 +1,129 @@
 {{define "scripts"}}
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./tinymce/js/tinymce/tinymce.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.0/dist/quill.js"></script>
 <script>
-  tinymce.init({
-      selector: '#mytextarea',
-      plugins: 'preview image link lists advlist table emoticons paste',
-      toolbar1: 'undo redo | blocks | bold italic',
-      toolbar2: 'alignleft aligncenter alignright alignjustify',
-      toolbar3: 'outdent indent | numlist bullist | emoticons ',
-      paste_data_images: true,
-      paste_block_drop: false,
-      automatic_uploads: true,
-      mobile: {
-	  menubar: false
+  document.addEventListener('DOMContentLoaded', function() {
+    const quill = new Quill('#editor', {
+      theme: 'snow',
+      modules: {
+        toolbar: [
+          [{ 'header': [1, 2, 3, false] }],
+          ['bold', 'italic', 'underline'],
+          ['link'],
+          [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+          [{ 'align': [] }]
+        ]
       },
-      content_style: "body { background-color: #f2f5a2; }"  // Inline style as an alternative  content_css: "./css/blazemarker.css",
-});
+      placeholder: 'Start writing...'
+    });
+
+    // Set initial content if editing existing article
+    const contentInput = document.querySelector('#content');
+    const existingContent = document.querySelector('#existingContent');
+    if (existingContent && existingContent.innerHTML.trim()) {
+      quill.root.innerHTML = existingContent.innerHTML;
+    }
+
+    // Handle form submission - copy Quill content to hidden input
+    const form = document.querySelector('form');
+    form.addEventListener('submit', function(e) {
+      contentInput.value = quill.root.innerHTML;
+    });
+  });
 </script>
+
 {{end}}
 
 {{ define "nav_body" }}
 
-
-
-<div class="container text-center">
-
+<div class="container text-center my-5">
   <header>
-    <h2>{{ .Title }}</h2>
-      <!--
-	  <div>
-            <p><span>Jefferey Decker</span></p>
-         <p><a ---
-
-
-	       ef="." rel="bookmark"><time datetime="2023-07-25T14:26:00-03:00">2023-06-25 14:26</time></a></p>
-	  </div>
-	  -->
+    <h2>{{ if .Article.ID }}Edit Article{{ else }}New Article{{ end }}</h2>
   </header>
 </div>
 
-<div class="container mt-5 blazemarker-bg-container">
-  <div class="col-md-12">
-    <div class="card mb-4">
-      <div class="card-body blazemarker-bg-card-body">
-	<form method="post" action="/article">
-	  <input type="text" name="title" placeholder="Enter the title">
-	  <textarea id="mytextarea" name="content"></textarea>
-	  <div class="form-check mt-3">
-	    <input class="form-check-input" type="checkbox" name="is_now" id="is_now" value="on">
-	    <label class="form-check-label" for="is_now">
-	      Mark as "Now" article
-	    </label>
-	  </div>
-	  <button id="submit" type="submit" class="mt-3">Create</button>
-	</form>
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <form method="post" action="/article">
+            {{ if .Article.ID }}
+            <input type="hidden" name="id" value="{{ .Article.ID }}">
+            {{ end }}
+
+            <div class="mb-4">
+              <input 
+                type="text" 
+                name="title" 
+                class="form-control form-control-lg" 
+                placeholder="Enter the title"
+                value="{{ .Article.Title }}"
+                required 
+                autofocus>
+            </div>
+
+            <div class="mb-4">
+              <div id="editor"></div>
+              <input type="hidden" id="content" name="content">
+              <!-- Hidden div to store existing content without HTML escaping -->
+              <div id="existingContent" style="display: none;">{{ .Article.Content }}</div>
+            </div>
+
+            {{ if .Profile.IsAdmin }}
+            <div class="mb-4 form-check">
+              <input 
+                class="form-check-input" 
+                type="checkbox" 
+                name="is_now" 
+                id="is_now" 
+                value="on"
+                {{ if .Article.IsNow }}checked{{ end }}>
+              <label class="form-check-label" for="is_now">
+                Mark as "Now" article
+              </label>
+            </div>
+            
+            <div class="mb-4 form-check">
+              <input 
+                class="form-check-input" 
+                type="checkbox" 
+                name="is_index" 
+                id="is_index" 
+                value="on"
+                {{ if .Article.IsIndex }}checked{{ end }}>
+              <label class="form-check-label" for="is_index">
+                Mark as "Index" article (shown on home page)
+              </label>
+            </div>
+            {{ end }}
+
+            <div class="mb-4 form-check">
+              <input 
+                class="form-check-input" 
+                type="checkbox" 
+                name="is_private" 
+                id="is_private" 
+                value="on"
+                {{ if .Article.IsPrivate }}checked{{ end }}>
+              <label class="form-check-label" for="is_private">
+                🔒 Private (only visible to you)
+              </label>
+            </div>
+
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary btn-lg flex-grow-1">
+                {{ if .ID }}Update Article{{ else }}Create Article{{ end }}
+              </button>
+              {{ if .ID }}
+              <a href="/articles" class="btn btn-secondary btn-lg">Cancel</a>
+              {{ end }}
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
 {{ end }}
-
