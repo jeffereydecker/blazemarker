@@ -109,6 +109,16 @@ func getTemplateFuncs() template.FuncMap {
 			}
 			return s[start:end]
 		},
+		"safeHTML": func(s interface{}) template.HTML {
+			switch v := s.(type) {
+			case template.HTML:
+				return v
+			case string:
+				return template.HTML(v)
+			default:
+				return template.HTML("")
+			}
+		},
 	}
 }
 

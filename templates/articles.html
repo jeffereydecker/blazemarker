@@ -103,7 +103,7 @@
           <div class="card-body">
             <h2 class="card-title">{{ .Title }}</h2>
             <div class="card-text article-preview">
-              {{ .Content }}
+              {{ safeHTML .Content }}
             </div>
           </div>
         </a>

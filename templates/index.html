@@ -26,7 +26,7 @@
 	{{ $profile := getUserProfile .Author }}
 	<div class="card-body blazemarker-bg-card-body">
 	  <h2 class="card-title">{{.Title}}</h2>
-	  <p class="card-text">{{.Content}} </p>
+	  <p class="card-text">{{ safeHTML .Content }} </p>
 	</div>
         <div class="card-footer text-muted d-flex align-items-center">
           <div class="me-2">
