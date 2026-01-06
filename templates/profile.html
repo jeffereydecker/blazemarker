@@ -51,6 +51,17 @@
               <small class="form-text text-muted">Used for notifications</small>
             </div>
 
+            <!-- Email Notifications -->
+            <div class="mb-3">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="notify_on_new_articles" name="notify_on_new_articles" {{ if .NotifyOnNewArticles }}checked{{ end }}>
+                <label class="form-check-label" for="notify_on_new_articles">
+                  📧 Send me email notifications when new articles are published
+                </label>
+              </div>
+              <small class="form-text text-muted">You'll receive an email when someone publishes a new public article (requires email address above)</small>
+            </div>
+
             <!-- Phone -->
             <div class="mb-3">
               <label for="phone" class="form-label">Phone Number</label>

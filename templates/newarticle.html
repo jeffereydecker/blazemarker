@@ -64,6 +64,24 @@
             </div>
 
             <div class="mb-4">
+              <label for="tags" class="form-label">Tags (optional)</label>
+              <input 
+                type="text" 
+                name="tags" 
+                id="tags"
+                class="form-control" 
+                placeholder="e.g., family, vacation, beach"
+                value="{{ .Article.Tags }}"
+                list="available-tags">
+              <datalist id="available-tags">
+                {{ range .AvailableTags }}
+                <option value="{{ . }}">
+                {{ end }}
+              </datalist>
+              <small class="form-text text-muted">Separate tags with commas. Don't include the # symbol.</small>
+            </div>
+
+            <div class="mb-4">
               <div id="editor"></div>
               <input type="hidden" id="content" name="content">
               <!-- Hidden div to store existing content without HTML escaping -->
@@ -113,9 +131,9 @@
 
             <div class="d-flex gap-2">
               <button type="submit" class="btn btn-primary btn-lg flex-grow-1">
-                {{ if .ID }}Update Article{{ else }}Create Article{{ end }}
+                {{ if .Article.ID }}Update Article{{ else }}Create Article{{ end }}
               </button>
-              {{ if .ID }}
+              {{ if .Article.ID }}
               <a href="/articles" class="btn btn-secondary btn-lg">Cancel</a>
               {{ end }}
             </div>

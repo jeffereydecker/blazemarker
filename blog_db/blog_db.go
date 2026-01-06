@@ -2,13 +2,17 @@ package blog_db
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"os"
 	"sort"
+	"strings"
 
 	"gorm.io/gorm"
 
+	"github.com/jeffereydecker/blazemarker/blaze_email"
 	"github.com/jeffereydecker/blazemarker/blaze_log"
+	"github.com/jeffereydecker/blazemarker/user_db"
 )
 
 var logger = blaze_log.GetLogger()
@@ -25,9 +29,24 @@ type Article struct {
 	Content   template.HTML `json:"content"`
 	Author    string        `json:"author"`
 	Date      string        `json:"date"`
+	Tags      string        `json:"tags"` // Comma-separated tags
 	IsNow     bool          `json:"is_now"`
 	IsPrivate bool          `json:"is_private"`
 	IsIndex   bool          `json:"is_index"`
+}
+
+type Reaction struct {
+	gorm.Model
+	ArticleID uint   `json:"article_id" gorm:"index"`
+	Username  string `json:"username" gorm:"index"`
+	Emoji     string `json:"emoji"`
+}
+
+type Comment struct {
+	gorm.Model
+	ArticleID uint   `json:"article_id" gorm:"index"`
+	Username  string `json:"username" gorm:"index"`
+	Content   string `json:"content" gorm:"type:text"`
 }
 
 //type Article struct {
@@ -208,6 +227,56 @@ func SearchArticles(db *gorm.DB, keyword string) []Article {
 	return (articles)
 }
 
+// SearchArticlesByTag searches for articles by tag
+func SearchArticlesByTag(db *gorm.DB, tag string) []Article {
+
+	// Automatically migrate the schema
+	db.AutoMigrate(&Article{})
+
+	// Search in tags field, exclude private articles
+	var articles []Article
+	searchPattern := "%" + tag + "%"
+	result := db.Where("(is_private = ? OR is_private IS NULL) AND tags LIKE ?",
+		false, searchPattern).Find(&articles)
+
+	if result.Error != nil {
+		logger.Error("Error searching articles by tag:", "result.Error", result.Error)
+	}
+
+	return (articles)
+}
+
+// GetAllTags retrieves all unique tags from all articles
+func GetAllTags(db *gorm.DB) []string {
+	db.AutoMigrate(&Article{})
+
+	var articles []Article
+	db.Select("tags").Where("tags != ? AND tags IS NOT NULL", "").Find(&articles)
+
+	// Collect all unique tags
+	tagMap := make(map[string]bool)
+	for _, article := range articles {
+		if article.Tags != "" {
+			tags := strings.Split(article.Tags, ",")
+			for _, tag := range tags {
+				trimmed := strings.TrimSpace(tag)
+				if trimmed != "" {
+					tagMap[trimmed] = true
+				}
+			}
+		}
+	}
+
+	// Convert map to sorted slice
+	var uniqueTags []string
+	for tag := range tagMap {
+		uniqueTags = append(uniqueTags, tag)
+	}
+	sort.Strings(uniqueTags)
+
+	return uniqueTags
+}
+
 func SortByDate(articles []Article) {
 	sort.Sort(ByDate(articles))
 }
@@ -239,6 +308,68 @@ func SaveArticle(db *gorm.DB, article Article) bool {
 	}
 
 	return (true)
+}
+
+// SaveArticleWithNotifications saves an article and sends email notifications to subscribers
+func SaveArticleWithNotifications(db *gorm.DB, article Article) bool {
+	// First save the article
+	if !SaveArticle(db, article) {
+		return false
+	}
+
+	// Don't send notifications for private articles
+	if article.IsPrivate {
+		logger.Debug("Skipping notifications for private article", "title", article.Title)
+		return true
+	}
+
+	// Get all users who want notifications
+	users, err := user_db.GetUsersWithNotifications(db)
+	if err != nil {
+		logger.Error("Failed to get users for notifications", "error", err)
+		return true // Article saved successfully, just notification failed
+	}
+
+	// Send notifications asynchronously to avoid blocking
+	go func() {
+		articleURL := fmt.Sprintf("https://blazemarker.com/article/view/%d", article.ID)
+
+		for _, user := range users {
+			// Skip sending to the author
+			if user.Username == article.Author {
+				continue
+			}
+
+			// Get author profile for display name
+			authorProfile, _ := user_db.GetUserProfile(db, article.Author)
+			authorName := article.Author
+			if authorProfile != nil && authorProfile.Handle != "" {
+				authorName = authorProfile.Handle
+			}
+
+			// Get recipient name
+			recipientName := user.Handle
+			if recipientName == "" {
+				recipientName = user.Username
+			}
+
+			// Send email
+			err := blaze_email.SendArticleNotification(
+				user.Email,
+				recipientName,
+				article.Title,
+				string(article.Content),
+				articleURL,
+				authorName,
+			)
+
+			if err != nil {
+				logger.Error("Failed to send notification", "to", user.Email, "error", err)
+			}
+		}
+	}()
+
+	return true
 }
 
 // GetArticleByID retrieves a single article by its ID
@@ -285,5 +416,129 @@ func UpdateArticleAndFile(db *gorm.DB, article Article) bool {
 		return false
 	}
 
+	return true
+}
+
+// AddReaction adds a reaction to an article
+func AddReaction(db *gorm.DB, articleID uint, username, emoji string) bool {
+	db.AutoMigrate(&Reaction{})
+
+	// Check if user already reacted with this emoji
+	var existingReaction Reaction
+	result := db.Where("article_id = ? AND username = ? AND emoji = ?", articleID, username, emoji).First(&existingReaction)
+
+	if result.Error == nil {
+		// Reaction already exists
+		return true
+	}
+
+	// Create new reaction
+	reaction := Reaction{
+		ArticleID: articleID,
+		Username:  username,
+		Emoji:     emoji,
+	}
+
+	if result := db.Create(&reaction); result.Error != nil {
+		logger.Error("Failed to add reaction:", "articleID", articleID, "username", username, "emoji", emoji, "error", result.Error)
+		return false
+	}
+
+	logger.Info("Reaction added successfully", "articleID", articleID, "username", username, "emoji", emoji)
+	return true
+}
+
+// RemoveReaction removes a reaction from an article
+func RemoveReaction(db *gorm.DB, articleID uint, username, emoji string) bool {
+	db.AutoMigrate(&Reaction{})
+
+	result := db.Where("article_id = ? AND username = ? AND emoji = ?", articleID, username, emoji).Delete(&Reaction{})
+
+	if result.Error != nil {
+		logger.Error("Failed to remove reaction:", "articleID", articleID, "username", username, "emoji", emoji, "error", result.Error)
+		return false
+	}
+
+	logger.Info("Reaction removed successfully", "articleID", articleID, "username", username, "emoji", emoji)
+	return true
+}
+
+// GetReactions retrieves all reactions for an article, grouped by emoji
+func GetReactions(db *gorm.DB, articleID uint) map[string][]string {
+	db.AutoMigrate(&Reaction{})
+
+	var reactions []Reaction
+	db.Where("article_id = ?", articleID).Find(&reactions)
+
+	// Group reactions by emoji
+	reactionMap := make(map[string][]string)
+	for _, reaction := range reactions {
+		reactionMap[reaction.Emoji] = append(reactionMap[reaction.Emoji], reaction.Username)
+	}
+
+	return reactionMap
+}
+
+// GetUserReactions retrieves emojis a specific user reacted with for an article
+func GetUserReactions(db *gorm.DB, articleID uint, username string) []string {
+	db.AutoMigrate(&Reaction{})
+
+	var reactions []Reaction
+	db.Where("article_id = ? AND username = ?", articleID, username).Find(&reactions)
+
+	var emojis []string
+	for _, reaction := range reactions {
+		emojis = append(emojis, reaction.Emoji)
+	}
+
+	return emojis
+}
+
+// AddComment adds a comment to an article
+func AddComment(db *gorm.DB, articleID uint, username, content string) bool {
+	db.AutoMigrate(&Comment{})
+
+	comment := Comment{
+		ArticleID: articleID,
+		Username:  username,
+		Content:   content,
+	}
+
+	if result := db.Create(&comment); result.Error != nil {
+		logger.Error("Failed to add comment:", "articleID", articleID, "username", username, "error", result.Error)
+		return false
+	}
+
+	logger.Info("Comment added successfully", "articleID", articleID, "username", username)
+	return true
+}
+
+// GetComments retrieves all comments for an article
+func GetComments(db *gorm.DB, articleID uint) []Comment {
+	db.AutoMigrate(&Comment{})
+
+	var comments []Comment
+	db.Where("article_id = ?", articleID).Order("created_at asc").Find(&comments)
+
+	return comments
+}
+
+// DeleteComment deletes a comment by ID
+func DeleteComment(db *gorm.DB, commentID uint, username string) bool {
+	db.AutoMigrate(&Comment{})
+
+	result := db.Where("id = ? AND username = ?", commentID, username).Delete(&Comment{})
+
+	if result.Error != nil {
+		logger.Error("Failed to delete comment:", "commentID", commentID, "username", username, "error", result.Error)
+		return false
+	}
+
+	if result.RowsAffected == 0 {
+		logger.Error("Comment not found or unauthorized", "commentID", commentID, "username", username)
+		return false
+	}
+
+	logger.Info("Comment deleted successfully", "commentID", commentID, "username", username)
 	return true
 }

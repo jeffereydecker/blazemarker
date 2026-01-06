@@ -61,14 +61,27 @@ func isAdmin(username string) bool {
 }
 
 type Blog struct {
-	Title       string    `json:"title"`
-	Articles    []Article `json:"articles"`
-	SearchQuery string    `json:"search_query"`
+	Title       string               `json:"title"`
+	Articles    []ArticleWithProfile `json:"articles"`
+	SearchQuery string               `json:"search_query"`
+	TagQuery    string               `json:"tag_query"`
 }
 
 type ArticleWithProfile struct {
-	Article
-	Profile *UserProfile
+	Article       Article
+	Profile       *UserProfile
+	AvailableTags []string
+	Reactions     map[string][]string
+	UserReactions []string
+	Comments      []Comment
+}
+
+type Comment struct {
+	ID        uint
+	ArticleID uint
+	Username  string
+	Content   string
+	CreatedAt string
 }
 
 type Gallery struct {
@@ -76,14 +89,31 @@ type Gallery struct {
 	Albums []Album `json:"albums"`
 }
 
-// Helper function to enrich articles with user profiles
+// Helper function to enrich articles with user profiles and reactions
 func enrichArticlesWithProfiles(articles []Article) []ArticleWithProfile {
 	enriched := make([]ArticleWithProfile, len(articles))
 	for i, article := range articles {
 		profile, _ := user_db.GetUserProfile(db, article.Author)
+		reactions := blog_db.GetReactions(db, article.ID)
+
+		// Get comments for this article
+		dbComments := blog_db.GetComments(db, article.ID)
+		comments := make([]Comment, len(dbComments))
+		for j, c := range dbComments {
+			comments[j] = Comment{
+				ID:        c.ID,
+				ArticleID: c.ArticleID,
+				Username:  c.Username,
+				Content:   c.Content,
+				CreatedAt: c.CreatedAt.Format("2006-01-02 15:04"),
+			}
+		}
+
 		enriched[i] = ArticleWithProfile{
-			Article: article,
-			Profile: profile,
+			Article:   article,
+			Profile:   profile,
+			Reactions: reactions,
+			Comments:  comments,
 		}
 	}
 	return enriched
@@ -119,6 +149,60 @@ func getTemplateFuncs() template.FuncMap {
 				return template.HTML("")
 			}
 		},
+		"splitTags": func(tags string) []string {
+			if tags == "" {
+				return []string{}
+			}
+			tagList := strings.Split(tags, ",")
+			result := []string{}
+			for _, tag := range tagList {
+				trimmed := strings.TrimSpace(tag)
+				if trimmed != "" {
+					result = append(result, trimmed)
+				}
+			}
+			return result
+		},
+		"joinUsers": func(users []string) string {
+			return strings.Join(users, ", ")
+		},
+		"getCommenters": func(comments []Comment) string {
+			if len(comments) == 0 {
+				return ""
+			}
+			// Get unique commenters
+			seenUsers := make(map[string]bool)
+			var users []string
+			for _, comment := range comments {
+				if !seenUsers[comment.Username] {
+					seenUsers[comment.Username] = true
+					users = append(users, comment.Username)
+				}
+			}
+			return strings.Join(users, ", ")
+		},
+		"add": func(a, b int) int {
+			return a + b
+		},
+		"sub": func(a, b int) int {
+			return a - b
+		},
+		"mul": func(a, b int) int {
+			return a * b
+		},
+		"div": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"iterate": func(count int) []int {
+			result := make([]int, count)
+			for i := 0; i < count; i++ {
+				result[i] = i
+			}
+			return result
+		},
 	}
 }
 
@@ -138,7 +222,8 @@ func servNow(w http.ResponseWriter, r *http.Request) {
 
 	pageData := new(Blog)
 	pageData.Title = "What I'm Doing Now"
-	pageData.Articles = blog_db.GetNowArticles(db)
+	articles := blog_db.GetNowArticles(db)
+	pageData.Articles = enrichArticlesWithProfiles(articles)
 
 	t := template.New("base.html").Funcs(getTemplateFuncs())
 	t, _ = t.ParseFiles("../templates/base.html", "../templates/index.html")
@@ -166,7 +251,8 @@ func servIndex(w http.ResponseWriter, r *http.Request) {
 
 	pageData := new(Blog)
 	pageData.Title = "Welcome Home"
-	pageData.Articles = blog_db.GetIndexArticles(db)
+	articles := blog_db.GetIndexArticles(db)
+	pageData.Articles = enrichArticlesWithProfiles(articles)
 
 	t := template.New("base.html").Funcs(getTemplateFuncs())
 	t, _ = t.ParseFiles("../templates/base.html", "../templates/index.html")
@@ -310,6 +396,7 @@ func servProfile(w http.ResponseWriter, r *http.Request) {
 		profile.Handle = r.FormValue("handle")
 		profile.Email = r.FormValue("email")
 		profile.Phone = r.FormValue("phone")
+		profile.NotifyOnNewArticles = r.FormValue("notify_on_new_articles") == "on"
 
 		// Handle avatar upload
 		file, header, err := r.FormFile("avatar")
@@ -513,11 +600,19 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			// Check authorization: user must be the author or an admin
+			if article.Author != username && !isAdmin(username) {
+				logger.Warn("Unauthorized edit attempt", "user", username, "articleAuthor", article.Author, "articleID", articleID)
+				http.Error(w, "You do not have permission to edit this article", http.StatusForbidden)
+				return
+			}
+
 			logger.Debug("servArticle()[GET] - Edit existing article", "articleID", articleID, "title", article.Title)
 
 			pageData := ArticleWithProfile{
-				Article: article,
-				Profile: profile,
+				Article:       article,
+				Profile:       profile,
+				AvailableTags: blog_db.GetAllTags(db),
 			}
 
 			t, _ := template.ParseFiles("../templates/base.html", "../templates/newarticle.html")
@@ -529,8 +624,9 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Create new article
 			pageData := ArticleWithProfile{
-				Article: Article{Title: "New Article"},
-				Profile: profile,
+				Article:       Article{Title: ""},
+				Profile:       profile,
+				AvailableTags: blog_db.GetAllTags(db),
 			}
 
 			logger.Debug("servArticle()[GET] - Create new article")
@@ -552,6 +648,14 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Validate required fields
+		title := strings.TrimSpace(r.FormValue("title"))
+		if title == "" {
+			logger.Error("Title is required")
+			http.Error(w, "Title is required", http.StatusBadRequest)
+			return
+		}
+
 		// Check if this is an update (article ID is provided)
 		articleIDStr := r.FormValue("id")
 		if len(articleIDStr) > 0 {
@@ -570,9 +674,17 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			// Check authorization: user must be the author or an admin
+			if article.Author != username && !isAdmin(username) {
+				logger.Warn("Unauthorized update attempt", "user", username, "articleAuthor", article.Author, "articleID", articleID)
+				http.Error(w, "You do not have permission to edit this article", http.StatusForbidden)
+				return
+			}
+
 			// Update fields
-			article.Title = r.FormValue("title")
+			article.Title = title
 			article.Content = template.HTML(r.FormValue("content"))
+			article.Tags = strings.TrimSpace(r.FormValue("tags"))
 			article.Author = username
 			article.IsNow = r.FormValue("is_now") == "on"
 			article.IsPrivate = r.FormValue("is_private") == "on"
@@ -588,15 +700,16 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Create new article
 			var article Article
-			article.Title = r.FormValue("title")
+			article.Title = title
 			article.Content = template.HTML(r.FormValue("content"))
+			article.Tags = strings.TrimSpace(r.FormValue("tags"))
 			article.Date = time.Now().Format("2006-01-02")
 			article.Author = username
 			article.IsNow = r.FormValue("is_now") == "on"
 			article.IsPrivate = r.FormValue("is_private") == "on"
 			article.IsIndex = r.FormValue("is_index") == "on"
 
-			if ok := blog_db.SaveArticle(db, article); !ok {
+			if ok := blog_db.SaveArticleWithNotifications(db, article); !ok {
 				logger.Error("Failed to save article", "title", article.Title, "author", article.Author)
 				http.Error(w, "Failed to save article", http.StatusInternalServerError)
 				return
@@ -613,9 +726,10 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 }
 
 func servDeleteArticle(w http.ResponseWriter, r *http.Request) {
+	var username string
 	var ok bool
 
-	if ok, _ = basicAuth(w, r); !ok {
+	if ok, username = basicAuth(w, r); !ok {
 		logger.Info("Failed baseAuth attempt")
 		return
 	}
@@ -647,6 +761,21 @@ func servDeleteArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load the article to check ownership
+	article, err := blog_db.GetArticleByID(db, articleID)
+	if err != nil {
+		logger.Error("Article not found:", "articleID", articleID)
+		http.Error(w, "Article not found", http.StatusNotFound)
+		return
+	}
+
+	// Check authorization: user must be the author or an admin
+	if article.Author != username && !isAdmin(username) {
+		logger.Warn("Unauthorized delete attempt", "user", username, "articleAuthor", article.Author, "articleID", articleID)
+		http.Error(w, "You do not have permission to delete this article", http.StatusForbidden)
+		return
+	}
+
 	if ok := blog_db.DeleteArticle(db, articleID); !ok {
 		logger.Error("Failed to delete article", "articleID", articleID)
 		http.Error(w, "Failed to delete article", http.StatusInternalServerError)
@@ -658,7 +787,10 @@ func servDeleteArticle(w http.ResponseWriter, r *http.Request) {
 }
 
 func servArticleView(w http.ResponseWriter, r *http.Request) {
-	if ok, _ := basicAuth(w, r); !ok {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
 		logger.Info("Failed baseAuth attempt")
 		return
 	}
@@ -685,11 +817,42 @@ func servArticleView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Debug("servArticleView()", "articleID", articleID, "title", article.Title)
+	logger.Debug("servArticleView()", "articleID", articleID, "title", article.Title, "article.ID", article.ID)
+
+	// Get user profile to pass to template
+	profile, _ := user_db.GetUserProfile(db, username)
+	if profile != nil {
+		profile.IsAdmin = isAdmin(username)
+	}
+
+	// Get reactions for this article
+	reactions := blog_db.GetReactions(db, articleID)
+	userReactions := blog_db.GetUserReactions(db, articleID, username)
+
+	// Get comments for this article
+	dbComments := blog_db.GetComments(db, articleID)
+	comments := make([]Comment, len(dbComments))
+	for i, c := range dbComments {
+		comments[i] = Comment{
+			ID:        c.ID,
+			ArticleID: c.ArticleID,
+			Username:  c.Username,
+			Content:   c.Content,
+			CreatedAt: c.CreatedAt.Format("2006-01-02 15:04"),
+		}
+	}
+
+	pageData := ArticleWithProfile{
+		Article:       article,
+		Profile:       profile,
+		Reactions:     reactions,
+		UserReactions: userReactions,
+		Comments:      comments,
+	}
 
 	t := template.New("base.html").Funcs(getTemplateFuncs())
 	t, _ = t.ParseFiles("../templates/base.html", "../templates/article_view.html")
-	err = t.Execute(w, article)
+	err = t.Execute(w, pageData)
 
 	if err != nil {
 		logger.Error(err.Error())
@@ -705,23 +868,32 @@ func servArticles(w http.ResponseWriter, r *http.Request) {
 
 	pageData := new(Blog)
 
-	// Check if there's a search query
+	// Check if there's a search query or tag filter
 	searchQuery := r.URL.Query().Get("q")
+	tagQuery := r.URL.Query().Get("tag")
 
-	if len(searchQuery) > 0 {
-		// Perform search
+	var articles []Article
+	if len(tagQuery) > 0 {
+		// Perform tag search
+		pageData.Title = "Articles tagged with \"" + tagQuery + "\""
+		pageData.TagQuery = tagQuery
+		articles = blog_db.SearchArticlesByTag(db, tagQuery)
+		logger.Debug("servArticles() - Tag search", "tag", tagQuery, "results", len(articles))
+	} else if len(searchQuery) > 0 {
+		// Perform general search
 		pageData.Title = "Search Results for \"" + searchQuery + "\""
 		pageData.SearchQuery = searchQuery
-		pageData.Articles = blog_db.SearchArticles(db, searchQuery)
-		logger.Debug("servArticles() - Search", "query", searchQuery, "results", len(pageData.Articles))
+		articles = blog_db.SearchArticles(db, searchQuery)
+		logger.Debug("servArticles() - Search", "query", searchQuery, "results", len(articles))
 	} else {
 		// Show all articles
 		pageData.Title = "Decker News"
-		pageData.Articles = blog_db.GetAllArticles(db)
+		articles = blog_db.GetAllArticles(db)
 		logger.Debug("servArticles()")
 	}
 
-	blog_db.SortByDate(pageData.Articles)
+	blog_db.SortByDate(articles)
+	pageData.Articles = enrichArticlesWithProfiles(articles)
 
 	t := template.New("base.html").Funcs(getTemplateFuncs())
 	t, _ = t.ParseFiles("../templates/base.html", "../templates/articles.html")
@@ -748,9 +920,10 @@ func servPrivateArticles(w http.ResponseWriter, r *http.Request) {
 	logger.Debug("servPrivateArticles()", "username", username)
 
 	// Get only private articles for this user
-	pageData.Articles = blog_db.GetPrivateArticles(db, username)
+	articles := blog_db.GetPrivateArticles(db, username)
 
-	blog_db.SortByDate(pageData.Articles)
+	blog_db.SortByDate(articles)
+	pageData.Articles = enrichArticlesWithProfiles(articles)
 
 	t := template.New("base.html").Funcs(getTemplateFuncs())
 	t, _ = t.ParseFiles("../templates/base.html", "../templates/articles.html")
@@ -777,9 +950,10 @@ func servMyArticles(w http.ResponseWriter, r *http.Request) {
 	logger.Debug("servMyArticles()", "username", username)
 
 	// Get only non-private articles for this user
-	pageData.Articles = blog_db.GetMyArticles(db, username)
+	articles := blog_db.GetMyArticles(db, username)
 
-	blog_db.SortByDate(pageData.Articles)
+	blog_db.SortByDate(articles)
+	pageData.Articles = enrichArticlesWithProfiles(articles)
 
 	t := template.New("base.html").Funcs(getTemplateFuncs())
 	t, _ = t.ParseFiles("../templates/base.html", "../templates/articles.html")
@@ -788,6 +962,122 @@ func servMyArticles(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logger.Error(err.Error())
 		return
+	}
+}
+
+func servReaction(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed baseAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		logger.Error("Form parsing error")
+		http.Error(w, "Form parsing error", http.StatusBadRequest)
+		return
+	}
+
+	articleIDStr := r.FormValue("article_id")
+	emoji := strings.TrimSpace(r.FormValue("emoji"))
+	action := r.FormValue("action") // "add" or "remove"
+
+	if articleIDStr == "" || emoji == "" || action == "" {
+		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
+
+	var articleID uint
+	if _, err := fmt.Sscanf(articleIDStr, "%d", &articleID); err != nil {
+		logger.Error("Invalid article ID:", "articleIDStr", articleIDStr, "error", err)
+		http.Error(w, "Invalid article ID", http.StatusBadRequest)
+		return
+	}
+
+	var success bool
+	if action == "add" {
+		success = blog_db.AddReaction(db, articleID, username, emoji)
+	} else if action == "remove" {
+		success = blog_db.RemoveReaction(db, articleID, username, emoji)
+	} else {
+		http.Error(w, "Invalid action", http.StatusBadRequest)
+		return
+	}
+
+	if !success {
+		http.Error(w, "Failed to process reaction", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success - JavaScript will handle UI update
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
+
+func servComment(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed baseAuth attempt")
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err != nil {
+			logger.Error("Form parsing error")
+			http.Error(w, "Form parsing error", http.StatusBadRequest)
+			return
+		}
+
+		articleIDStr := r.FormValue("article_id")
+		content := strings.TrimSpace(r.FormValue("content"))
+
+		if articleIDStr == "" || content == "" {
+			http.Error(w, "Missing required fields", http.StatusBadRequest)
+			return
+		}
+
+		var articleID uint
+		if _, err := fmt.Sscanf(articleIDStr, "%d", &articleID); err != nil {
+			logger.Error("Invalid article ID:", "articleIDStr", articleIDStr, "error", err)
+			http.Error(w, "Invalid article ID", http.StatusBadRequest)
+			return
+		}
+
+		if !blog_db.AddComment(db, articleID, username, content) {
+			http.Error(w, "Failed to add comment", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	} else if r.Method == http.MethodDelete {
+		// Extract comment ID from URL path
+		path := strings.TrimPrefix(r.URL.Path, "/comment/")
+		var commentID uint
+		if _, err := fmt.Sscanf(path, "%d", &commentID); err != nil {
+			logger.Error("Invalid comment ID:", "path", path, "error", err)
+			http.Error(w, "Invalid comment ID", http.StatusBadRequest)
+			return
+		}
+
+		if !blog_db.DeleteComment(db, commentID, username) {
+			http.Error(w, "Failed to delete comment", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -856,6 +1146,9 @@ func main() {
 			servArticle(w, r)
 		}
 	})
+	http.HandleFunc("/reaction", servReaction)
+	http.HandleFunc("/comment", servComment)
+	http.HandleFunc("/comment/", servComment)
 	http.HandleFunc("/article/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/article/view/") {
 			// View single article

@@ -1,5 +1,254 @@
-{{define "scripts"}}{{end}}
+{{define "scripts"}}
+<style>
+#emoji-suggestions {
+  position: absolute;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  max-height: 250px;
+  overflow-y: auto;
+  z-index: 1000;
+  display: none;
+  min-width: 200px;
+}
+.emoji-suggestion-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.emoji-suggestion-item:hover,
+.emoji-suggestion-item.active {
+  background: #f0f0f0;
+}
+.emoji-preview {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+}
+.emoji-name {
+  font-size: 14px;
+  color: #666;
+}
+.emoji-input-wrapper {
+  position: relative;
+}
+</style>
+<script>
+const articleID = {{ if .Article.ID }}{{ .Article.ID }}{{ else }}0{{ end }};
+const userReactions = [{{ range $i, $emoji := .UserReactions }}{{ if $i }},{{ end }}"{{ $emoji }}"{{ end }}];
+
+function sendReaction(emoji, action) {
+  fetch('/reaction', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `article_id=${articleID}&emoji=${encodeURIComponent(emoji)}&action=${action}`
+  })
+  .then(response => {
+    if (response.ok) {
+      location.reload();
+    } else {
+      alert('Failed to process reaction');
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    alert('Failed to process reaction');
+  });
+}
+
+// Emoji autocomplete data
+const emojiList = [
+  { emoji: '❤️', name: 'heart', keywords: ['love', 'heart', 'red'] },
+  { emoji: '👍', name: 'thumbs up', keywords: ['thumbs', 'up', 'like', 'yes', 'approve'] },
+  { emoji: '😊', name: 'smile', keywords: ['smile', 'happy', 'joy'] },
+  { emoji: '😂', name: 'laugh', keywords: ['laugh', 'lol', 'funny', 'haha'] },
+  { emoji: '🎉', name: 'party', keywords: ['party', 'celebrate', 'celebration', 'congrats'] },
+  { emoji: '👏', name: 'clap', keywords: ['clap', 'applause', 'bravo'] },
+  { emoji: '🔥', name: 'fire', keywords: ['fire', 'hot', 'lit'] },
+  { emoji: '💯', name: '100', keywords: ['100', 'perfect', 'hundred'] },
+  { emoji: '🙏', name: 'pray', keywords: ['pray', 'thanks', 'please'] },
+  { emoji: '😍', name: 'heart eyes', keywords: ['love', 'heart eyes', 'adore'] },
+  { emoji: '🤔', name: 'thinking', keywords: ['think', 'hmm', 'wondering'] },
+  { emoji: '😢', name: 'sad', keywords: ['sad', 'cry', 'tear'] },
+  { emoji: '👌', name: 'ok', keywords: ['ok', 'okay', 'good'] },
+  { emoji: '✨', name: 'sparkles', keywords: ['sparkle', 'shine', 'star'] },
+  { emoji: '💪', name: 'strong', keywords: ['strong', 'muscle', 'power'] }
+];
+
+function showEmojiSuggestions(input, query) {
+  const suggestions = document.getElementById('emoji-suggestions');
+  if (!query) {
+    suggestions.style.display = 'none';
+    return;
+  }
+
+  const matches = emojiList.filter(item => 
+    item.name.toLowerCase().includes(query.toLowerCase()) ||
+    item.keywords.some(kw => kw.toLowerCase().includes(query.toLowerCase()))
+  ).slice(0, 8);
+
+  if (matches.length === 0) {
+    suggestions.style.display = 'none';
+    return;
+  }
+
+  suggestions.innerHTML = matches.map((item, index) => 
+    `<div class="emoji-suggestion-item" data-emoji="${item.emoji}" data-index="${index}">
+      <span class="emoji-preview">${item.emoji}</span>
+      <span class="emoji-name">${item.name}</span>
+    </div>`
+  ).join('');
+  suggestions.style.display = 'block';
+
+  // Add click handlers to suggestions
+  suggestions.querySelectorAll('.emoji-suggestion-item').forEach(item => {
+    item.addEventListener('click', function() {
+      const emoji = this.getAttribute('data-emoji');
+      input.value = emoji;
+      suggestions.style.display = 'none';
+      sendReaction(emoji, 'add');
+    });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const emojiInput = document.getElementById('emoji-input');
+  const suggestions = document.getElementById('emoji-suggestions');
+
+  // Emoji input autocomplete
+  emojiInput.addEventListener('input', function() {
+    showEmojiSuggestions(this, this.value.trim());
+  });
+
+  // Handle keyboard navigation in suggestions
+  emojiInput.addEventListener('keydown', function(e) {
+    const items = suggestions.querySelectorAll('.emoji-suggestion-item');
+    const activeItem = suggestions.querySelector('.emoji-suggestion-item.active');
+    let currentIndex = activeItem ? parseInt(activeItem.getAttribute('data-index')) : -1;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      currentIndex = Math.min(currentIndex + 1, items.length - 1);
+      items.forEach((item, idx) => {
+        item.classList.toggle('active', idx === currentIndex);
+      });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      currentIndex = Math.max(currentIndex - 1, 0);
+      items.forEach((item, idx) => {
+        item.classList.toggle('active', idx === currentIndex);
+      });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeItem) {
+        const emoji = activeItem.getAttribute('data-emoji');
+        this.value = emoji;
+        suggestions.style.display = 'none';
+        sendReaction(emoji, 'add');
+      } else {
+        const emoji = this.value.trim();
+        if (emoji) {
+          suggestions.style.display = 'none';
+          sendReaction(emoji, 'add');
+        }
+      }
+    } else if (e.key === 'Escape') {
+      suggestions.style.display = 'none';
+    }
+  });
+
+  // Add reaction button
+  document.getElementById('add-reaction-btn').addEventListener('click', function() {
+    const emoji = emojiInput.value.trim();
+    if (emoji) {
+      suggestions.style.display = 'none';
+      sendReaction(emoji, 'add');
+    }
+  });
+
+  // Close suggestions when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!emojiInput.contains(e.target) && !suggestions.contains(e.target)) {
+      suggestions.style.display = 'none';
+    }
+  });
+
+  // Click existing reactions to toggle
+  document.querySelectorAll('.reaction-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const emoji = this.getAttribute('data-emoji');
+      const hasReacted = userReactions.includes(emoji);
+      sendReaction(emoji, hasReacted ? 'remove' : 'add');
+    });
+  });
+
+  // Add comment
+  document.getElementById('add-comment-btn').addEventListener('click', function() {
+    const content = document.getElementById('comment-input').value.trim();
+    if (!content) {
+      alert('Please enter a comment');
+      return;
+    }
+
+    fetch('/comment', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `article_id=${articleID}&content=${encodeURIComponent(content)}`
+    })
+    .then(response => {
+      if (response.ok) {
+        location.reload();
+      } else {
+        alert('Failed to post comment');
+      }
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      alert('Failed to post comment');
+    });
+  });
+
+  // Delete comment
+  document.querySelectorAll('.delete-comment-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      if (!confirm('Delete this comment?')) {
+        return;
+      }
+
+      const commentId = this.getAttribute('data-comment-id');
+      fetch(`/comment/${commentId}`, {
+        method: 'DELETE'
+      })
+      .then(response => {
+        if (response.ok) {
+          location.reload();
+        } else {
+          alert('Failed to delete comment');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to delete comment');
+      });
+    });
+  });
+});
+</script>
+{{end}}
 {{ define "nav_body" }}
+
+<div class="container text-center">
+  <header>
+    <h2>{{ .Article.Title }}</h2>
+  </header>
+</div>
 
 <div class="container mt-5">
   <div class="row justify-content-center">
@@ -8,47 +257,84 @@
       <nav aria-label="breadcrumb" class="mb-3">
         <ol class="breadcrumb">
           <li class="breadcrumb-item"><a href="/articles">← Back to Articles</a></li>
-          <li class="breadcrumb-item active" aria-current="page">{{ .Title }}</li>
         </ol>
       </nav>
 
       <!-- Article content -->
-      {{ $profile := getUserProfile .Author }}
+      {{ $authorProfile := getUserProfile .Article.Author }}
       <article class="card shadow-sm mb-4">
         <div class="card-body">
-          <h1 class="card-title mb-3">{{ .Title }}</h1>
-          
           <div class="d-flex align-items-center mb-4">
             <div class="me-3">
-              {{ if $profile.AvatarPath }}
-                <img src="{{ $profile.AvatarPath }}" alt="{{ .Author }}" class="rounded-circle" style="width: 48px; height: 48px; object-fit: cover;">
+              {{ if $authorProfile.AvatarPath }}
+                <img src="{{ $authorProfile.AvatarPath }}" alt="{{ .Article.Author }}" class="rounded-circle" style="width: 48px; height: 48px; object-fit: cover;">
               {{ else }}
                 <div class="rounded-circle bg-secondary d-inline-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
-                  <span class="text-white" style="font-size: 20px;">{{ slice .Author 0 1 | upper }}</span>
+                  <span class="text-white" style="font-size: 20px;">{{ slice .Article.Author 0 1 | upper }}</span>
                 </div>
               {{ end }}
             </div>
             <div class="text-muted">
               <small>
-                Posted on {{ .Date }} by <strong>{{ if $profile.Handle }}{{ $profile.Handle }}{{ else }}{{ .Author }}{{ end }}</strong>
-                {{ if .IsNow }}
+                Posted on {{ .Article.Date }} by <strong>{{ if $authorProfile.Handle }}{{ $authorProfile.Handle }}{{ else }}{{ .Article.Author }}{{ end }}</strong>
+                {{ if .Article.IsNow }}
                 <span class="badge bg-primary ms-2">Now</span>
                 {{ end }}
-                {{ if .IsPrivate }}
+                {{ if .Article.IsIndex }}
+                <span class="badge bg-success ms-2">Index</span>
+                {{ end }}
+                {{ if .Article.IsPrivate }}
                 <span class="badge bg-secondary ms-2">🔒 Private</span>
                 {{ end }}
               </small>
             </div>
           </div>
+
+          <!-- Tags -->
+          {{ $tags := splitTags .Article.Tags }}
+          {{ if gt (len $tags) 0 }}
+          <div class="mb-3">
+            {{ range $tags }}
+            <a href="/articles?tag={{ . }}" class="badge bg-info text-decoration-none me-1">#{{ . }}</a>
+            {{ end }}
+          </div>
+          {{ end }}
           
           <div class="article-content">
-            {{ safeHTML .Content }}
+            {{ safeHTML .Article.Content }}
+          </div>
+
+          <!-- Reactions Section -->
+          <div class="mt-4 border-top pt-3">
+            <div class="mb-2">
+              <small class="text-muted">React:</small>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+              {{ if .Reactions }}
+              {{ range $emoji, $users := .Reactions }}
+              <button class="btn btn-sm btn-outline-secondary reaction-btn" data-emoji="{{ $emoji }}" title="{{ joinUsers $users }}">
+                {{ $emoji }} <span class="badge bg-secondary">{{ len $users }}</span>
+              </button>
+              {{ end }}
+              {{ end }}
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <small class="text-muted me-2">Add reaction:</small>
+              <div class="emoji-input-wrapper">
+                <div class="input-group" style="width: auto; max-width: 220px;">
+                  <input type="text" id="emoji-input" class="form-control form-control-sm" placeholder="Type emoji name..." style="width: 140px;">
+                  <button class="btn btn-sm btn-success" id="add-reaction-btn">+</button>
+                </div>
+                <div id="emoji-suggestions"></div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Action buttons at bottom -->
+        <!-- Action buttons at bottom - only show to author or admins -->
+        {{ if or (eq .Article.Author .Profile.Username) .Profile.IsAdmin }}
         <div class="card-footer bg-light d-flex justify-content-end gap-2">
-          <a href="/article?id={{ .ID }}" 
+          <a href="/article?id={{ .Article.ID }}" 
              class="btn btn-sm btn-outline-primary" 
              title="Edit article">
             ✎
@@ -61,7 +347,60 @@
             🗑
           </button>
         </div>
+        {{ end }}
       </article>
+
+      <!-- Comments Section -->
+      <div class="card shadow-sm mt-4">
+        <div class="card-header bg-light">
+          <h5 class="mb-0">Comments ({{ len .Comments }})</h5>
+        </div>
+        <div class="card-body">
+          <!-- Add Comment Form -->
+          <div class="mb-4">
+            <textarea id="comment-input" class="form-control" rows="3" placeholder="Write a comment..."></textarea>
+            <button id="add-comment-btn" class="btn btn-primary btn-sm mt-2">Post Comment</button>
+          </div>
+
+          <!-- Comments List -->
+          <div id="comments-list">
+            {{ if .Comments }}
+            {{ range .Comments }}
+            {{ $commentProfile := getUserProfile .Username }}
+            <div class="comment mb-3 pb-3 border-bottom" data-comment-id="{{ .ID }}">
+              <div class="d-flex align-items-start">
+                <div class="me-2">
+                  {{ if $commentProfile.AvatarPath }}
+                    <img src="{{ $commentProfile.AvatarPath }}" alt="{{ .Username }}" class="rounded-circle" style="width: 32px; height: 32px; object-fit: cover;">
+                  {{ else }}
+                    <div class="rounded-circle bg-secondary d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                      <span class="text-white" style="font-size: 14px;">{{ slice .Username 0 1 | upper }}</span>
+                    </div>
+                  {{ end }}
+                </div>
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <strong>{{ if $commentProfile.Handle }}{{ $commentProfile.Handle }}{{ else }}{{ .Username }}{{ end }}</strong>
+                      <small class="text-muted ms-2">{{ .CreatedAt }}</small>
+                    </div>
+                    {{ if eq .Username $.Profile.Username }}
+                    <button class="btn btn-sm btn-link text-danger delete-comment-btn" data-comment-id="{{ .ID }}" title="Delete comment">
+                      <small>🗑</small>
+                    </button>
+                    {{ end }}
+                  </div>
+                  <p class="mb-0 mt-1">{{ .Content }}</p>
+                </div>
+              </div>
+            </div>
+            {{ end }}
+            {{ else }}
+            <p class="text-muted text-center">No comments yet. Be the first to comment!</p>
+            {{ end }}
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -75,12 +414,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <p>Are you sure you want to delete <strong>{{ .Title }}</strong>?</p>
+        <p>Are you sure you want to delete <strong>{{ .Article.Title }}</strong>?</p>
         <p class="text-danger small">This action cannot be undone.</p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <form action="/article/{{ .ID }}" method="POST" style="display: inline;">
+        <form action="/article/{{ .Article.ID }}" method="POST" style="display: inline;">
           <input type="hidden" name="_method" value="DELETE">
           <button type="submit" class="btn btn-danger">Delete Permanently</button>
         </form>

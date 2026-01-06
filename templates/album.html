@@ -1,5 +1,19 @@
 
-{{define "scripts"}}{{end}}
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var carousel = document.getElementById('carouselExample');
+  if (carousel) {
+    carousel.addEventListener('slide.bs.carousel', function(e) {
+      var counter = document.getElementById('current-photo');
+      if (counter) {
+        counter.textContent = e.to + 1;
+      }
+    });
+  }
+});
+</script>
+{{end}}
 
 {{ define "nav_body" }}
 
@@ -45,17 +59,12 @@
             <span aria-hidden="true">&times;</span>
           </button>
 	</div>
-	<div class="modal-body blazemarker-modal-body">
-          <div id="carouselExample" class="carousel slide" data-bs-ride="carousel">
-            <ol class="carousel-indicators">
-	      {{ range .OriginalPhotos }}
-	      {{ if eq .Index 0 }}
-              <li data-bs-target="#carouselExample" data-bs-slide-to="{{ .Index }}" class="active"></li>
-	      {{ else }}
-	      <li data-bs-target="#carouselExample" data-bs-slide-to="{{ .Index }}"></li>
-	      {{ end }}
-	      {{ end }}   
-             </ol>
+	<div class="modal-body blazemarker-modal-body" style="padding: 20px; display: flex; align-items: center; justify-content: center; min-height: 80vh;">
+          <div id="carouselExample" class="carousel slide" data-bs-ride="carousel" style="width: 100%; height: 100%;">
+            <!-- Photo counter -->
+            <div class="photo-counter" style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; z-index: 20;">
+              <span id="current-photo">1</span> / {{ len .OriginalPhotos }}
+            </div>
             <div class="carousel-inner blazemarker-carousel-inner">
 	      {{ range .OriginalPhotos }}
 	      {{ if eq .Index 0 }}

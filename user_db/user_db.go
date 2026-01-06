@@ -9,12 +9,13 @@ var logger = blaze_log.GetLogger()
 
 type UserProfile struct {
 	gorm.Model
-	Username   string `gorm:"uniqueIndex;not null"`
-	Handle     string `gorm:"uniqueIndex"`
-	Email      string
-	Phone      string
-	AvatarPath string
-	IsAdmin    bool `gorm:"-"` // Not stored in DB, computed at runtime
+	Username            string `gorm:"uniqueIndex;not null"`
+	Handle              string `gorm:"uniqueIndex"`
+	Email               string
+	Phone               string
+	AvatarPath          string
+	NotifyOnNewArticles bool `gorm:"default:false"`
+	IsAdmin             bool `gorm:"-"` // Not stored in DB, computed at runtime
 }
 
 func GetUserProfile(db *gorm.DB, username string) (*UserProfile, error) {
@@ -64,4 +65,18 @@ func GetUserProfileByHandle(db *gorm.DB, handle string) (*UserProfile, error) {
 	}
 
 	return &profile, nil
+}
+
+func GetUsersWithNotifications(db *gorm.DB) ([]UserProfile, error) {
+	db.AutoMigrate(&UserProfile{})
+
+	var profiles []UserProfile
+	result := db.Where("notify_on_new_articles = ? AND email != ?", true, "").Find(&profiles)
+
+	if result.Error != nil {
+		logger.Error("Error getting users with notifications enabled", "error", result.Error)
+		return nil, result.Error
+	}
+
+	return profiles, nil
 }
