@@ -317,9 +317,17 @@ func SaveArticleWithNotifications(db *gorm.DB, article Article) bool {
 		return false
 	}
 
+	// Reload the article to get the assigned ID
+	var savedArticle Article
+	result := db.Where("title = ? AND author = ? AND date = ?", article.Title, article.Author, article.Date).First(&savedArticle)
+	if result.Error != nil {
+		logger.Error("Failed to retrieve saved article", "error", result.Error)
+		return true // Article saved, but can't send notifications
+	}
+
 	// Don't send notifications for private articles
-	if article.IsPrivate {
-		logger.Debug("Skipping notifications for private article", "title", article.Title)
+	if savedArticle.IsPrivate {
+		logger.Debug("Skipping notifications for private article", "title", savedArticle.Title)
 		return true
 	}
 
@@ -332,17 +340,17 @@ func SaveArticleWithNotifications(db *gorm.DB, article Article) bool {
 
 	// Send notifications asynchronously to avoid blocking
 	go func() {
-		articleURL := fmt.Sprintf("https://blazemarker.com/article/view/%d", article.ID)
+		articleURL := fmt.Sprintf("https://blazemarker.com/article/view/%d", savedArticle.ID)
 
 		for _, user := range users {
-			// Skip sending to the author
-			if user.Username == article.Author {
+			// Skip sending to the author (unless they're an admin monitoring the system)
+			if user.Username == savedArticle.Author && !user.IsAdmin {
 				continue
 			}
 
 			// Get author profile for display name
-			authorProfile, _ := user_db.GetUserProfile(db, article.Author)
-			authorName := article.Author
+			authorProfile, _ := user_db.GetUserProfile(db, savedArticle.Author)
+			authorName := savedArticle.Author
 			if authorProfile != nil && authorProfile.Handle != "" {
 				authorName = authorProfile.Handle
 			}
@@ -357,8 +365,8 @@ func SaveArticleWithNotifications(db *gorm.DB, article Article) bool {
 			err := blaze_email.SendArticleNotification(
 				user.Email,
 				recipientName,
-				article.Title,
-				string(article.Content),
+				savedArticle.Title,
+				string(savedArticle.Content),
 				articleURL,
 				authorName,
 			)
