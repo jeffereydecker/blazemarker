@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"net"
 	"net/smtp"
 	"strings"
 
@@ -70,9 +71,43 @@ func SendArticleNotification(toEmail, toName, articleTitle, articleContent, arti
 
 	// Send email via localhost SMTP
 	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
-	err = smtp.SendMail(addr, nil, fromAddr, []string{toEmail}, msg)
+
+	// Connect to SMTP server
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
-		logger.Error("Failed to send email", "to", toEmail, "error", err)
+		logger.Error("Failed to connect to SMTP server", "error", err)
+		return err
+	}
+	defer conn.Close()
+
+	// Create SMTP client (without TLS for localhost)
+	client, err := smtp.NewClient(conn, smtpHost)
+	if err != nil {
+		logger.Error("Failed to create SMTP client", "error", err)
+		return err
+	}
+	defer client.Close()
+
+	// Set sender and recipient
+	if err := client.Mail(fromAddr); err != nil {
+		logger.Error("Failed to set sender", "error", err)
+		return err
+	}
+	if err := client.Rcpt(toEmail); err != nil {
+		logger.Error("Failed to set recipient", "error", err)
+		return err
+	}
+
+	// Send message body
+	wc, err := client.Data()
+	if err != nil {
+		logger.Error("Failed to initiate data transfer", "error", err)
+		return err
+	}
+	defer wc.Close()
+
+	if _, err := wc.Write(msg); err != nil {
+		logger.Error("Failed to write message", "error", err)
 		return err
 	}
 
