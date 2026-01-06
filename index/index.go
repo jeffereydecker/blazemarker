@@ -709,7 +709,7 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 			article.IsPrivate = r.FormValue("is_private") == "on"
 			article.IsIndex = r.FormValue("is_index") == "on"
 
-			if ok := blog_db.SaveArticleWithNotifications(db, article); !ok {
+			if ok := blog_db.SaveArticleWithNotifications(db, article, adminUsers); !ok {
 				logger.Error("Failed to save article", "title", article.Title, "author", article.Author)
 				http.Error(w, "Failed to save article", http.StatusInternalServerError)
 				return
@@ -722,7 +722,6 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 	default:
 		logger.Info("Method not allowed", "r.Method", r.Method)
 	}
-
 }
 
 func servDeleteArticle(w http.ResponseWriter, r *http.Request) {

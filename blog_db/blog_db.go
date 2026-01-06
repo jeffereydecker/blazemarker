@@ -311,7 +311,7 @@ func SaveArticle(db *gorm.DB, article Article) bool {
 }
 
 // SaveArticleWithNotifications saves an article and sends email notifications to subscribers
-func SaveArticleWithNotifications(db *gorm.DB, article Article) bool {
+func SaveArticleWithNotifications(db *gorm.DB, article Article, adminUsers map[string]bool) bool {
 	// First save the article
 	if !SaveArticle(db, article) {
 		return false
@@ -344,7 +344,8 @@ func SaveArticleWithNotifications(db *gorm.DB, article Article) bool {
 
 		for _, user := range users {
 			// Skip sending to the author (unless they're an admin monitoring the system)
-			if user.Username == savedArticle.Author && !user.IsAdmin {
+			isAdmin := adminUsers[user.Username]
+			if user.Username == savedArticle.Author && !isAdmin {
 				continue
 			}
 

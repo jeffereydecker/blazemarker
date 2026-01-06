@@ -80,3 +80,7 @@ func GetUsersWithNotifications(db *gorm.DB) ([]UserProfile, error) {
 
 	return profiles, nil
 }
+
+func IsAdminUser(db *gorm.DB, username string, adminUsers map[string]bool) bool {
+	return adminUsers[username]
+}
