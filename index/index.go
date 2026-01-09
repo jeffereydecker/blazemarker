@@ -1169,12 +1169,20 @@ func main() {
 		http.ServeFile(w, r, "../static/apple-touch-icon.png")
 	})
 
+	http.HandleFunc("/apple-touch-icon-precomposed.png", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "../static/apple-touch-icon.png")
+	})
+
 	http.HandleFunc("/favicon-16x16.png", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "../static/favicon-16x16.png")
 	})
 
 	http.HandleFunc("/favicon-32x32.png", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "../static/favicon-32x32.png")
+	})
+
+	http.HandleFunc("/offline.html", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "../static/offline.html")
 	})
 
 	// TODO: Update /index to show photos, videos and blog and maybe an random photo, video or blog?  Or an about page
