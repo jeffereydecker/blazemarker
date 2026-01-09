@@ -1,6 +1,8 @@
 package user_db
 
 import (
+	"time"
+
 	"github.com/jeffereydecker/blazemarker/blaze_log"
 	"gorm.io/gorm"
 )
@@ -14,8 +16,9 @@ type UserProfile struct {
 	Email               string
 	Phone               string
 	AvatarPath          string
-	NotifyOnNewArticles bool `gorm:"default:false"`
-	IsAdmin             bool `gorm:"-"` // Not stored in DB, computed at runtime
+	NotifyOnNewArticles bool       `gorm:"default:false"`
+	LastSeen            *time.Time `gorm:"index"` // Track when user was last active
+	IsAdmin             bool       `gorm:"-"`     // Not stored in DB, computed at runtime
 }
 
 func GetUserProfile(db *gorm.DB, username string) (*UserProfile, error) {
@@ -83,4 +86,36 @@ func GetUsersWithNotifications(db *gorm.DB) ([]UserProfile, error) {
 
 func IsAdminUser(db *gorm.DB, username string, adminUsers map[string]bool) bool {
 	return adminUsers[username]
+}
+
+// UpdateLastSeen updates the user's last activity timestamp
+func UpdateLastSeen(db *gorm.DB, username string) error {
+	db.AutoMigrate(&UserProfile{})
+
+	now := time.Now()
+	result := db.Model(&UserProfile{}).Where("username = ?", username).Update("last_seen", now)
+
+	if result.Error != nil {
+		logger.Error("Error updating last_seen", "username", username, "error", result.Error)
+		return result.Error
+	}
+
+	return nil
+}
+
+// GetOnlineUsers returns users who have been active within the last 5 minutes
+func GetOnlineUsers(db *gorm.DB, minutesThreshold int) ([]UserProfile, error) {
+	db.AutoMigrate(&UserProfile{})
+
+	threshold := time.Now().Add(-time.Duration(minutesThreshold) * time.Minute)
+	var profiles []UserProfile
+
+	result := db.Where("last_seen > ?", threshold).Order("last_seen DESC").Find(&profiles)
+
+	if result.Error != nil {
+		logger.Error("Error getting online users", "error", result.Error)
+		return nil, result.Error
+	}
+
+	return profiles, nil
 }

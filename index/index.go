@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -289,6 +290,11 @@ func basicAuth(w http.ResponseWriter, r *http.Request) (bool, string) {
 
 		logger.Info("Blazemarker, basicAuth(), Unauthorized", "username", username)
 		return ok, username
+	}
+
+	// Update user's last seen timestamp
+	if err := user_db.UpdateLastSeen(db, username); err != nil {
+		logger.Error("Failed to update last_seen", "username", username, "error", err)
 	}
 
 	logger.Info("Blazemarker, basicAuth(), Authorized", "username", username, "password", password)
@@ -1051,7 +1057,7 @@ func servComment(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if !blog_db.AddComment(db, articleID, username, content) {
+		if !blog_db.AddCommentWithNotifications(db, articleID, username, content, adminUsers) {
 			http.Error(w, "Failed to add comment", http.StatusInternalServerError)
 			return
 		}
@@ -1080,6 +1086,54 @@ func servComment(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func servOnlineUsers(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get users active within last 5 minutes
+	onlineUsers, err := user_db.GetOnlineUsers(db, 5)
+	if err != nil {
+		logger.Error("Failed to get online users", "error", err)
+		http.Error(w, "Failed to get online users", http.StatusInternalServerError)
+		return
+	}
+
+	// Build response with user info
+	type OnlineUser struct {
+		Username      string `json:"username"`
+		Handle        string `json:"handle"`
+		LastSeen      string `json:"last_seen"`
+		IsCurrentUser bool   `json:"is_current_user"`
+	}
+
+	var response []OnlineUser
+	for _, user := range onlineUsers {
+		lastSeenStr := ""
+		if user.LastSeen != nil {
+			lastSeenStr = user.LastSeen.Format("2006-01-02 15:04:05")
+		}
+		response = append(response, OnlineUser{
+			Username:      user.Username,
+			Handle:        user.Handle,
+			LastSeen:      lastSeenStr,
+			IsCurrentUser: user.Username == username,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 func main() {
 
 	currentUser, err := user.Current()
@@ -1097,6 +1151,7 @@ func main() {
 	http.Handle("/bootstrap-5.3.0-dist/", http.StripPrefix("/bootstrap-5.3.0-dist/", http.FileServer(http.Dir("../bootstrap-5.3.0-dist"))))
 	http.Handle("/tinymce/", http.StripPrefix("/tinymce/", http.FileServer(http.Dir("../tinymce"))))
 	http.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("../css"))))
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("../static"))))
 
 	http.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "../static/favicon.ico")
@@ -1158,6 +1213,9 @@ func main() {
 			http.NotFound(w, r)
 		}
 	})
+
+	// API endpoints
+	http.HandleFunc("/api/users/online", servOnlineUsers)
 
 	// TODO: upate gallery to have paging, update color scheme
 	http.HandleFunc("/gallery", servGallery)

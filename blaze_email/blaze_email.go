@@ -159,3 +159,101 @@ func stripHTML(html string, maxLen int) string {
 
 	return text
 }
+
+// CommentNotification contains the data for comment notification emails
+type CommentNotification struct {
+	ArticleTitle       string
+	ArticleURL         string
+	CommenterName      string
+	CommentContent     string
+	RecipientName      string
+	NotificationReason string
+}
+
+// SendCommentNotification sends an email notification about a new comment
+func SendCommentNotification(toEmail, toName, articleTitle, articleURL, commenterName, commentContent, notificationReason string) error {
+	if toEmail == "" {
+		return fmt.Errorf("recipient email is empty")
+	}
+
+	// Load and parse the email template
+	tmpl, err := template.ParseFiles("../templates/email_comment_notification.html")
+	if err != nil {
+		logger.Error("Failed to parse comment email template", "error", err)
+		return err
+	}
+
+	// Prepare template data
+	data := CommentNotification{
+		ArticleTitle:       articleTitle,
+		ArticleURL:         articleURL,
+		CommenterName:      commenterName,
+		CommentContent:     commentContent,
+		RecipientName:      toName,
+		NotificationReason: notificationReason,
+	}
+
+	// Execute template
+	var body bytes.Buffer
+	if err := tmpl.Execute(&body, data); err != nil {
+		logger.Error("Failed to execute comment email template", "error", err)
+		return err
+	}
+
+	// Prepare email headers and body
+	subject := fmt.Sprintf("New comment on: %s", articleTitle)
+	msg := []byte(fmt.Sprintf(
+		"From: %s\r\n"+
+			"To: %s\r\n"+
+			"Subject: %s\r\n"+
+			"MIME-Version: 1.0\r\n"+
+			"Content-Type: text/html; charset=UTF-8\r\n"+
+			"\r\n"+
+			"%s",
+		fromAddr, toEmail, subject, body.String()))
+
+	// Send email via localhost SMTP
+	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
+
+	// Connect to SMTP server
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		logger.Error("Failed to connect to SMTP server", "error", err)
+		return err
+	}
+	defer conn.Close()
+
+	// Create SMTP client (without TLS for localhost)
+	client, err := smtp.NewClient(conn, smtpHost)
+	if err != nil {
+		logger.Error("Failed to create SMTP client", "error", err)
+		return err
+	}
+	defer client.Close()
+
+	// Set sender and recipient
+	if err := client.Mail(fromAddr); err != nil {
+		logger.Error("Failed to set sender", "error", err)
+		return err
+	}
+	if err := client.Rcpt(toEmail); err != nil {
+		logger.Error("Failed to set recipient", "error", err)
+		return err
+	}
+
+	// Send message body
+	wc, err := client.Data()
+	if err != nil {
+		logger.Error("Failed to initiate data transfer", "error", err)
+		return err
+	}
+	defer wc.Close()
+
+	if _, err := wc.Write(msg); err != nil {
+		logger.Error("Failed to write message", "error", err)
+		return err
+	}
+
+	logger.Info("Comment notification sent", "to", toEmail, "article", articleTitle)
+	return nil
+}

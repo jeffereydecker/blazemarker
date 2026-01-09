@@ -522,6 +522,101 @@ func AddComment(db *gorm.DB, articleID uint, username, content string) bool {
 	return true
 }
 
+// GetUniqueCommenters retrieves a list of unique usernames who have commented on an article
+func GetUniqueCommenters(db *gorm.DB, articleID uint) []string {
+	db.AutoMigrate(&Comment{})
+
+	var usernames []string
+	db.Model(&Comment{}).
+		Where("article_id = ?", articleID).
+		Distinct("username").
+		Pluck("username", &usernames)
+
+	return usernames
+}
+
+// AddCommentWithNotifications adds a comment and sends email notifications to the article author,
+// all previous commenters, and admins (excluding the commenter)
+func AddCommentWithNotifications(db *gorm.DB, articleID uint, username, content string, adminUsers map[string]bool) bool {
+	// First, add the comment
+	if !AddComment(db, articleID, username, content) {
+		return false
+	}
+
+	// Get the article to retrieve the author
+	article, err := GetArticleByID(db, articleID)
+	if err != nil {
+		logger.Error("Failed to get article for notification", "articleID", articleID, "error", err)
+		return true // Comment was added successfully, but notification failed
+	}
+
+	// Get all unique commenters on this article
+	commenters := GetUniqueCommenters(db, articleID)
+
+	// Create a map to track who should be notified
+	notifyUsers := make(map[string]bool)
+
+	// Add the article author (if not the commenter)
+	if article.Author != username {
+		notifyUsers[article.Author] = true
+	}
+
+	// Add all previous commenters (excluding the current commenter)
+	for _, commenter := range commenters {
+		if commenter != username {
+			notifyUsers[commenter] = true
+		}
+	}
+
+	// Add all admins (excluding the commenter if they're an admin)
+	for admin := range adminUsers {
+		if admin != username {
+			notifyUsers[admin] = true
+		}
+	}
+
+	// Send notifications to all users in the notify list
+	articleURL := fmt.Sprintf("https://blazemarker.com/article_view?id=%d", article.ID)
+
+	for notifyUsername := range notifyUsers {
+		// Get user profile to check email address
+		profile, err := user_db.GetUserProfile(db, notifyUsername)
+		if err != nil || profile == nil || profile.Email == "" {
+			logger.Debug("Skipping notification - no email", "username", notifyUsername)
+			continue
+		}
+
+		// Determine the notification reason
+		var reason string
+		if notifyUsername == article.Author {
+			reason = "are the author of this article"
+		} else if adminUsers[notifyUsername] {
+			reason = "are an admin"
+		} else {
+			reason = "previously commented on this article"
+		}
+
+		// Send the email notification
+		err = blaze_email.SendCommentNotification(
+			profile.Email,
+			notifyUsername,
+			article.Title,
+			articleURL,
+			username,
+			content,
+			reason,
+		)
+
+		if err != nil {
+			logger.Error("Failed to send comment notification", "recipient", notifyUsername, "error", err)
+		} else {
+			logger.Info("Comment notification sent", "recipient", notifyUsername, "articleID", articleID)
+		}
+	}
+
+	return true
+}
+
 // GetComments retrieves all comments for an article
 func GetComments(db *gorm.DB, articleID uint) []Comment {
 	db.AutoMigrate(&Comment{})
