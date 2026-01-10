@@ -1,94 +1,179 @@
-{{define "scripts"}}{{end}}
+{{define "scripts"}}
+<style>
+/* Sticky toolbar styles */
+.articles-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+}
+
+.toolbar-buttons {
+  display: flex;
+  gap: 10px;
+  padding: 10px 15px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.toolbar-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 0.2s, box-shadow 0.2s;
+  text-decoration: none;
+}
+
+.toolbar-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  color: white;
+}
+
+.toolbar-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Dropdown panels */
+.toolbar-panel {
+  background: #f8f9fa;
+  border-top: 2px solid #667eea;
+  padding: 20px;
+  display: none;
+}
+
+.toolbar-panel.show {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .toolbar-buttons {
+    justify-content: flex-start;
+  }
+  
+  .toolbar-btn {
+    font-size: 13px;
+    padding: 6px 12px;
+  }
+}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Toggle toolbar panels
+  document.querySelectorAll('[data-toggle-panel]').forEach(btn => {
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      const panelId = this.getAttribute('data-toggle-panel');
+      const panel = document.getElementById(panelId);
+      
+      // Close other panels
+      document.querySelectorAll('.toolbar-panel').forEach(p => {
+        if (p.id !== panelId) p.classList.remove('show');
+      });
+      
+      // Toggle this panel
+      panel.classList.toggle('show');
+    });
+  });
+  
+  // Close panels when clicking outside
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.articles-toolbar')) {
+      document.querySelectorAll('.toolbar-panel').forEach(p => {
+        p.classList.remove('show');
+      });
+    }
+  });
+});
+</script>
+{{end}}
 {{ define "nav_body" }}
 
-
-
 <div class="container text-center">
-
   <header>
     <h2>{{ .Title }}</h2>
-      <!--
-	  <div>
-            <p><span>Jefferey Decker</span></p>
-         <p><a ---
-
-
-	       ef="." rel="bookmark"><time datetime="2023-07-25T14:26:00-03:00">2023-06-25 14:26</time></a></p>
-	  </div>
-	  -->
   </header>
-
-
-
 </div>
 
-
-<!-- Main Content -->
-<div class="container mt-5">
-  <div class="row">
-    <!-- Sidebar -->
-    <div class="col-md-4">
-      <!-- Search Widget -->
-      <div class="card mb-4">
-	<h5 class="card-header">Search</h5>
-	<div class="card-body blazemarker-bg-card-body">
+<!-- Sticky Toolbar -->
+<div class="articles-toolbar">
+  <div class="toolbar-buttons">
+    <button class="toolbar-btn" data-toggle-panel="searchPanel">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+      </svg>
+      Search
+    </button>
+    
+    <button class="toolbar-btn" data-toggle-panel="categoriesPanel">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm-8 8A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm8 0A1.5 1.5 0 0 1 10.5 9h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 13.5v-3z"/>
+      </svg>
+      Categories
+    </button>
+    
+    <a href="/article" class="toolbar-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/>
+      </svg>
+      New Article
+    </a>
+  </div>
+  
+  <!-- Search Panel -->
+  <div id="searchPanel" class="toolbar-panel">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-6">
           <form action="/articles" method="get" class="mb-3">
-            <label class="form-label small">Search articles:</label>
+            <label class="form-label">Search articles:</label>
             <div class="input-group">
               <input type="text" name="q" class="form-control" placeholder="Search for..." value="{{ .SearchQuery }}">
               <button class="btn btn-secondary" type="submit">Go!</button>
             </div>
           </form>
+        </div>
+        <div class="col-md-6">
           <form action="/articles" method="get">
-            <label class="form-label small">Search by tag:</label>
+            <label class="form-label">Search by tag:</label>
             <div class="input-group">
               <input type="text" name="tag" class="form-control" placeholder="Enter tag..." value="{{ .TagQuery }}">
               <button class="btn btn-info" type="submit">Search</button>
             </div>
           </form>
-	</div>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <!-- Side Widget -->
-      <div class="card mb-4">
-	<h5 class="card-header">Tools</h5>
-	<div class="card-body blazemarker-bg-card-body">
-	  <a href="/article">New Article</a>
-	</div>
-      </div>
-    </div>
-    
-    <div class="col-md-4">	
-      <!-- Categories Widget -->
-      <div class="card mb-4">
-	<h5 class="card-header">Categories</h5>
-	<div class="card-body blazemarker-bg-card-body">
-          <div class="row">
-            <div class="col-lg-12">
-              <ul class="list-unstyled mb-0">
-		<li><a href="/articles">All Articles</a></li>
-		<li><a href="/myarticles">My Articles</a></li>
-		<li><a href="/private">🔒 My Private Articles</a></li>
-              </ul>
-            </div>
-	    <!-- 
-		 <div class="col-lg-6">
-                   <ul class="list-unstyled mb-0">
-                     <li><a href="#">Category 4</a></li>
-                     <li><a href="#">Category 5</a></li>
-                     <li><a href="#">Category 6</a></li>
-                   </ul>
-		 </div>
-		 -->
-          </div>
-	</div>
+        </div>
       </div>
     </div>
   </div>
+  
+  <!-- Categories Panel -->
+  <div id="categoriesPanel" class="toolbar-panel">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-12">
+          <ul class="list-inline mb-0">
+            <li class="list-inline-item"><a href="/articles" class="btn btn-outline-primary btn-sm">All Articles</a></li>
+            <li class="list-inline-item"><a href="/myarticles" class="btn btn-outline-primary btn-sm">My Articles</a></li>
+            <li class="list-inline-item"><a href="/private" class="btn btn-outline-secondary btn-sm">🔒 My Private Articles</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-  <div class="row">
+<!-- Main Content -->
+<div class="container mt-3">
     <!-- Blog Posts -->
     <div class="col-md-12">
       <div class="card mb-4">

@@ -37,6 +37,48 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link href="https://cdn.jsdelivr.net/npm/quill@2.0.0/dist/quill.snow.css" rel="stylesheet">
 <link rel="stylesheet" href="/css/blazemarker.css">
+
+<style>
+/* Mobile-friendly navbar improvements */
+@media (max-width: 575.98px) {
+  /* Full-width dropdown on mobile */
+  .navbar-collapse {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    max-height: 70vh;
+    overflow-y: auto;
+    z-index: 1000;
+  }
+  
+  /* Larger touch targets */
+  .navbar-nav .nav-link {
+    padding: 14px 20px;
+    font-size: 1.1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  
+  /* Last item no border */
+  .navbar-nav .nav-item:last-child .nav-link {
+    border-bottom: none;
+  }
+  
+  /* Better hover/active states on mobile */
+  .navbar-nav .nav-link:active,
+  .navbar-nav .nav-link:focus {
+    background-color: rgba(255,255,255,0.15);
+  }
+  
+  /* Smooth scrolling for long menus */
+  .navbar-collapse {
+    scroll-behavior: smooth;
+  }
+}
+</style>
+
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.0/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -68,7 +110,7 @@
 	</button>
 
 	<div class="collapse navbar-collapse justify-content-sm-center" id="navbarContent">
-	  <ul class="navbar-nav  navbar-nav-scroll" style="--bs-scroll-height: 120px;">
+	  <ul class="navbar-nav navbar-nav-scroll" style="--bs-scroll-height: 400px;">
             <li class="nav-item">
 	      <a class="nav-link active" href="/gallery">Photos</a>
 	    </li>
@@ -76,7 +118,7 @@
 	      <a class="nav-link active" href="/articles">Articles</a>
 	    </li>
 	    <li class="nav-item">
-	      <a class="nav-link active" href="/chat">💬 Chat</a>
+	      <a class="nav-link active" href="/chat">Chat</a>
 	    </li>
 	    <li class="nav-item">
 	      <a class="nav-link active" href="/profile">Profile</a>
