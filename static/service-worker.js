@@ -1,7 +1,7 @@
 // Blazemarker Service Worker
-// Version 1.0.0
+// Version 1.0.1
 
-const CACHE_NAME = 'blazemarker-v1';
+const CACHE_NAME = 'blazemarker-v1-1';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to cache immediately on install
@@ -46,7 +46,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch event - network first, fall back to cache
+// Fetch event - cache first with network fallback for better offline experience
 self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') {
@@ -58,41 +58,62 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Don't cache non-successful responses
-        if (!response || response.status !== 200 || response.type === 'error') {
-          return response;
-        }
-
-        // Clone the response for caching
-        const responseToCache = response.clone();
-
-        // Cache successful responses
-        caches.open(CACHE_NAME).then((cache) => {
-          // Don't cache API calls or large files
-          const url = new URL(event.request.url);
-          if (!url.pathname.startsWith('/api/')) {
-            cache.put(event.request, responseToCache);
-          }
+  // API calls - always try network first
+  const url = new URL(event.request.url);
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(event.request).catch(() => {
+        return new Response(JSON.stringify({ error: 'Offline' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' }
         });
-
-        return response;
       })
-      .catch(() => {
-        // Network failed, try cache
-        return caches.match(event.request).then((response) => {
-          if (response) {
+    );
+    return;
+  }
+
+  // For everything else - cache first, then network
+  event.respondWith(
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        // Return cached version, but also fetch fresh version in background
+        fetch(event.request).then((response) => {
+          if (response && response.status === 200) {
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, response.clone());
+            });
+          }
+        }).catch(() => {
+          // Network failed, but we already returned cache
+        });
+        return cachedResponse;
+      }
+
+      // Not in cache, fetch from network
+      return fetch(event.request)
+        .then((response) => {
+          // Don't cache non-successful responses
+          if (!response || response.status !== 200 || response.type === 'error') {
             return response;
           }
 
-          // If requesting an HTML page and not in cache, show offline page
-          if (event.request.headers.get('accept').includes('text/html')) {
+          // Clone and cache the response
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+
+          return response;
+        })
+        .catch(() => {
+          // Network failed and not in cache
+          // If requesting an HTML page, show offline page
+          if (event.request.headers.get('accept') && 
+              event.request.headers.get('accept').includes('text/html')) {
             return caches.match(OFFLINE_URL);
           }
 
-          // For other resources, return a basic response
+          // For other resources, return error
           return new Response('Offline', {
             status: 503,
             statusText: 'Service Unavailable',
@@ -101,7 +122,7 @@ self.addEventListener('fetch', (event) => {
             })
           });
         });
-      })
+    })
   );
 });
 

@@ -17,8 +17,9 @@ type UserProfile struct {
 	Phone               string
 	AvatarPath          string
 	NotifyOnNewArticles bool       `gorm:"default:false"`
-	LastSeen            *time.Time `gorm:"index"` // Track when user was last active
-	IsAdmin             bool       `gorm:"-"`     // Not stored in DB, computed at runtime
+	NotifyOnNewMessages bool       `gorm:"default:true"` // Push notifications for new chat messages
+	LastSeen            *time.Time `gorm:"index"`        // Track when user was last active
+	IsAdmin             bool       `gorm:"-"`            // Not stored in DB, computed at runtime
 }
 
 func GetUserProfile(db *gorm.DB, username string) (*UserProfile, error) {
@@ -114,6 +115,22 @@ func GetOnlineUsers(db *gorm.DB, minutesThreshold int) ([]UserProfile, error) {
 
 	if result.Error != nil {
 		logger.Error("Error getting online users", "error", result.Error)
+		return nil, result.Error
+	}
+
+	return profiles, nil
+}
+
+// GetAllUsersWithStatus returns all users with their last_seen status
+func GetAllUsersWithStatus(db *gorm.DB) ([]UserProfile, error) {
+	db.AutoMigrate(&UserProfile{})
+
+	var profiles []UserProfile
+
+	result := db.Where("last_seen IS NOT NULL").Order("last_seen DESC").Find(&profiles)
+
+	if result.Error != nil {
+		logger.Error("Error getting all users with status", "error", result.Error)
 		return nil, result.Error
 	}
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -13,6 +15,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -21,7 +24,9 @@ import (
 	"github.com/jeffereydecker/blazemarker/blaze_db"
 	"github.com/jeffereydecker/blazemarker/blaze_log"
 	"github.com/jeffereydecker/blazemarker/blog_db"
+	"github.com/jeffereydecker/blazemarker/chat_db"
 	"github.com/jeffereydecker/blazemarker/gallery_db"
+	"github.com/jeffereydecker/blazemarker/push_db"
 	"github.com/jeffereydecker/blazemarker/user_db"
 	"github.com/tg123/go-htpasswd"
 )
@@ -35,6 +40,18 @@ type UserProfile = user_db.UserProfile
 var logger *slog.Logger = blaze_log.GetLogger()
 var db *gorm.DB = blaze_db.GetDB()
 var adminUsers map[string]bool
+
+// Session management
+type Session struct {
+	Username  string
+	ExpiresAt time.Time
+}
+
+var (
+	sessions      = make(map[string]*Session)
+	sessionsMutex sync.RWMutex
+	sessionTTL    = 7 * 24 * time.Hour // 7 days
+)
 
 // loadAdminUsers loads the list of admin users from config file
 func loadAdminUsers() {
@@ -59,6 +76,63 @@ func loadAdminUsers() {
 // isAdmin checks if a username is an admin
 func isAdmin(username string) bool {
 	return adminUsers[username]
+}
+
+// generateSessionToken generates a random session token
+func generateSessionToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+// createSession creates a new session for the user
+func createSession(username string) (string, error) {
+	token, err := generateSessionToken()
+	if err != nil {
+		return "", err
+	}
+
+	sessionsMutex.Lock()
+	defer sessionsMutex.Unlock()
+
+	sessions[token] = &Session{
+		Username:  username,
+		ExpiresAt: time.Now().Add(sessionTTL),
+	}
+
+	return token, nil
+}
+
+// getSession retrieves a session by token
+func getSession(token string) (*Session, bool) {
+	sessionsMutex.RLock()
+	defer sessionsMutex.RUnlock()
+
+	session, exists := sessions[token]
+	if !exists || time.Now().After(session.ExpiresAt) {
+		return nil, false
+	}
+
+	return session, true
+}
+
+// cleanupExpiredSessions periodically removes expired sessions
+func cleanupExpiredSessions() {
+	ticker := time.NewTicker(1 * time.Hour)
+	go func() {
+		for range ticker.C {
+			sessionsMutex.Lock()
+			now := time.Now()
+			for token, session := range sessions {
+				if now.After(session.ExpiresAt) {
+					delete(sessions, token)
+				}
+			}
+			sessionsMutex.Unlock()
+		}
+	}()
 }
 
 type Blog struct {
@@ -266,6 +340,24 @@ func servIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func basicAuth(w http.ResponseWriter, r *http.Request) (bool, string) {
+	// First, check for session cookie
+	if cookie, err := r.Cookie("session_token"); err == nil {
+		if session, valid := getSession(cookie.Value); valid {
+			// Extend session on each request
+			sessionsMutex.Lock()
+			session.ExpiresAt = time.Now().Add(sessionTTL)
+			sessionsMutex.Unlock()
+
+			// Update user's last seen timestamp
+			if err := user_db.UpdateLastSeen(db, session.Username); err != nil {
+				logger.Error("Failed to update last_seen", "username", session.Username, "error", err)
+			}
+
+			return true, session.Username
+		}
+	}
+
+	// Fall back to Basic Auth
 	username, password, ok := r.BasicAuth()
 
 	if !ok {
@@ -290,6 +382,22 @@ func basicAuth(w http.ResponseWriter, r *http.Request) (bool, string) {
 
 		logger.Info("Blazemarker, basicAuth(), Unauthorized", "username", username)
 		return ok, username
+	}
+
+	// Create session and set cookie
+	token, err := createSession(username)
+	if err != nil {
+		logger.Error("Failed to create session", "error", err)
+	} else {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "session_token",
+			Value:    token,
+			Path:     "/",
+			MaxAge:   int(sessionTTL.Seconds()),
+			HttpOnly: true,
+			Secure:   false, // Set to true if using HTTPS
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 
 	// Update user's last seen timestamp
@@ -359,6 +467,32 @@ func servAlbum(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func servChat(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	profile, err := user_db.GetUserProfile(db, username)
+	if err != nil {
+		logger.Error("Error getting user profile", "error", err)
+		http.Error(w, "Error loading profile", http.StatusInternalServerError)
+		return
+	}
+	profile.IsAdmin = isAdmin(username)
+
+	t := template.New("base.html").Funcs(getTemplateFuncs())
+	t, _ = t.ParseFiles("../templates/base.html", "../templates/chat.html")
+	err = t.Execute(w, profile)
+	if err != nil {
+		logger.Error(err.Error())
+		return
+	}
+}
+
 func servProfile(w http.ResponseWriter, r *http.Request) {
 	var username string
 	var ok bool
@@ -403,6 +537,7 @@ func servProfile(w http.ResponseWriter, r *http.Request) {
 		profile.Email = r.FormValue("email")
 		profile.Phone = r.FormValue("phone")
 		profile.NotifyOnNewArticles = r.FormValue("notify_on_new_articles") == "on"
+		profile.NotifyOnNewMessages = r.FormValue("notify_on_new_messages") == "on"
 
 		// Handle avatar upload
 		file, header, err := r.FormFile("avatar")
@@ -1100,38 +1235,379 @@ func servOnlineUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get users active within last 5 minutes
-	onlineUsers, err := user_db.GetOnlineUsers(db, 5)
+	// Get all users with their status
+	allUsers, err := user_db.GetAllUsersWithStatus(db)
 	if err != nil {
-		logger.Error("Failed to get online users", "error", err)
-		http.Error(w, "Failed to get online users", http.StatusInternalServerError)
+		logger.Error("Failed to get users with status", "error", err)
+		http.Error(w, "Failed to get users with status", http.StatusInternalServerError)
 		return
 	}
 
-	// Build response with user info
-	type OnlineUser struct {
+	// Build response with user info including online/offline status
+	type UserStatus struct {
 		Username      string `json:"username"`
 		Handle        string `json:"handle"`
 		LastSeen      string `json:"last_seen"`
+		IsOnline      bool   `json:"is_online"`
 		IsCurrentUser bool   `json:"is_current_user"`
+		MinutesAgo    int    `json:"minutes_ago"`
 	}
 
-	var response []OnlineUser
-	for _, user := range onlineUsers {
+	var response []UserStatus
+	now := time.Now()
+	onlineThreshold := 5 * time.Minute
+
+	for _, user := range allUsers {
 		lastSeenStr := ""
+		isOnline := false
+		minutesAgo := 0
+
 		if user.LastSeen != nil {
 			lastSeenStr = user.LastSeen.Format("2006-01-02 15:04:05")
+			timeSince := now.Sub(*user.LastSeen)
+			minutesAgo = int(timeSince.Minutes())
+			isOnline = timeSince < onlineThreshold
 		}
-		response = append(response, OnlineUser{
+
+		response = append(response, UserStatus{
 			Username:      user.Username,
 			Handle:        user.Handle,
 			LastSeen:      lastSeenStr,
+			IsOnline:      isOnline,
 			IsCurrentUser: user.Username == username,
+			MinutesAgo:    minutesAgo,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func servChatSend(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		ToUsername string `json:"to_username"`
+		Content    string `json:"content"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ToUsername == "" || req.Content == "" {
+		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
+
+	// Can't send message to yourself
+	if req.ToUsername == username {
+		http.Error(w, "Cannot send message to yourself", http.StatusBadRequest)
+		return
+	}
+
+	// Send the message
+	message, err := chat_db.SendMessage(db, username, req.ToUsername, req.Content)
+	if err != nil {
+		logger.Error("Failed to send message", "error", err)
+		http.Error(w, "Failed to send message", http.StatusInternalServerError)
+		return
+	}
+
+	// Send push notification to recipient
+	go sendMessageNotification(db, username, req.ToUsername, req.Content)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(message)
+}
+
+// sendMessageNotification sends a push notification for a new message
+func sendMessageNotification(db *gorm.DB, fromUsername, toUsername, content string) {
+	// Check if recipient wants notifications
+	profile, err := user_db.GetUserProfile(db, toUsername)
+	if err != nil || !profile.NotifyOnNewMessages {
+		return
+	}
+
+	// Get sender's handle for display
+	senderProfile, err := user_db.GetUserProfile(db, fromUsername)
+	senderName := fromUsername
+	if err == nil && senderProfile.Handle != "" {
+		senderName = senderProfile.Handle
+	}
+
+	// Get recipient's push subscriptions
+	subscriptions, err := push_db.GetUserSubscriptions(db, toUsername)
+	if err != nil || len(subscriptions) == 0 {
+		logger.Info("No push subscriptions for user", "username", toUsername)
+		return
+	}
+
+	// Truncate message for notification
+	notificationBody := content
+	if len(notificationBody) > 100 {
+		notificationBody = notificationBody[:97] + "..."
+	}
+
+	// Create notification payload
+	notification := push_db.PushNotification{
+		Title: "💬 " + senderName,
+		Body:  notificationBody,
+		Icon:  "/static/icons/icon-192x192.png",
+		Data: map[string]interface{}{
+			"url":  "/chat?with=" + fromUsername,
+			"from": fromUsername,
+			"type": "chat_message",
+		},
+	}
+
+	payload, err := notification.ToJSON()
+	if err != nil {
+		logger.Error("Failed to create notification payload", "error", err)
+		return
+	}
+
+	// In a full implementation, you would use a Web Push library here
+	// For now, we'll just log what would be sent
+	logger.Info("Push notification would be sent",
+		"to", toUsername,
+		"from", fromUsername,
+		"subscriptions", len(subscriptions),
+		"payload", payload,
+	)
+
+	// TODO: Implement actual Web Push sending using github.com/SherClockHolmes/webpush-go
+	// Example:
+	// for _, sub := range subscriptions {
+	//     resp, err := webpush.SendNotification([]byte(payload), &webpush.Subscription{
+	//         Endpoint: sub.Endpoint,
+	//         Keys: webpush.Keys{
+	//             P256dh: sub.P256dh,
+	//             Auth:   sub.Auth,
+	//         },
+	//     }, &webpush.Options{
+	//         VAPIDPublicKey:  vapidPublicKey,
+	//         VAPIDPrivateKey: vapidPrivateKey,
+	//         TTL:             30,
+	//     })
+	//
+	//     if err != nil {
+	//         logger.Error("Failed to send push notification", "error", err)
+	//         // If subscription is no longer valid, delete it
+	//         if resp != nil && (resp.StatusCode == 404 || resp.StatusCode == 410) {
+	//             push_db.DeleteSubscription(db, sub.Endpoint)
+	//         }
+	//     }
+	// }
+}
+
+func servChatMessages(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get the other user from query parameter
+	otherUser := r.URL.Query().Get("with")
+	if otherUser == "" {
+		http.Error(w, "Missing 'with' parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Get optional limit parameter (default 50)
+	limit := 50
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil {
+			limit = 50
+		}
+	}
+
+	// Get messages
+	messages, err := chat_db.GetRecentMessages(db, username, otherUser, limit)
+	if err != nil {
+		logger.Error("Failed to get messages", "error", err)
+		http.Error(w, "Failed to get messages", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(messages)
+}
+
+func servChatConversations(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get all conversations
+	conversations, err := chat_db.GetConversations(db, username)
+	if err != nil {
+		logger.Error("Failed to get conversations", "error", err)
+		http.Error(w, "Failed to get conversations", http.StatusInternalServerError)
+		return
+	}
+
+	// Enrich with user handles from user_db
+	for i := range conversations {
+		profile, err := user_db.GetUserProfile(db, conversations[i].Username)
+		if err == nil && profile != nil && profile.Handle != "" {
+			conversations[i].Handle = profile.Handle
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(conversations)
+}
+
+func servChatMarkRead(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse request body
+	var req struct {
+		FromUsername string `json:"from_username"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.FromUsername == "" {
+		http.Error(w, "Missing from_username", http.StatusBadRequest)
+		return
+	}
+
+	// Mark messages as read
+	if err := chat_db.MarkMessagesAsRead(db, username, req.FromUsername); err != nil {
+		logger.Error("Failed to mark messages as read", "error", err)
+		http.Error(w, "Failed to mark messages as read", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// Push notification handlers
+func servPushSubscribe(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse subscription data
+	var subscription push_db.SubscriptionData
+	if err := json.NewDecoder(r.Body).Decode(&subscription); err != nil {
+		logger.Error("Failed to parse subscription", "error", err)
+		http.Error(w, "Invalid subscription data", http.StatusBadRequest)
+		return
+	}
+
+	// Save subscription
+	if err := push_db.SaveSubscription(db, username, subscription); err != nil {
+		logger.Error("Failed to save subscription", "error", err)
+		http.Error(w, "Failed to save subscription", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func servPushUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	var ok bool
+
+	if ok, _ = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse request
+	var req struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Error("Failed to parse request", "error", err)
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Delete subscription
+	if err := push_db.DeleteSubscription(db, req.Endpoint); err != nil {
+		logger.Error("Failed to delete subscription", "error", err)
+		http.Error(w, "Failed to delete subscription", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func servPushVapidKey(w http.ResponseWriter, r *http.Request) {
+	// Return VAPID public key for push subscriptions
+	// For now, we'll generate this in the frontend using Web Crypto API
+	// Or you can use a library like github.com/SherClockHolmes/webpush-go
+	vapidPublicKey := os.Getenv("VAPID_PUBLIC_KEY")
+	if vapidPublicKey == "" {
+		vapidPublicKey = "BEl62iUYgUivxIkv69yViEuiBIa-Ib37gfKR_V-lU-xk31OKlFFNRD5Yt2Dw5N3Hy1QPj3Qn3T5j8kY7aDXl1W0" // Demo key
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"publicKey": vapidPublicKey})
 }
 
 func main() {
@@ -1143,6 +1619,9 @@ func main() {
 
 	// Load admin users from config
 	loadAdminUsers()
+
+	// Start session cleanup routine
+	cleanupExpiredSessions()
 
 	// TODO: Test general access to file system
 	// TODO: Look for ways to lock down to specific directories
@@ -1189,6 +1668,7 @@ func main() {
 	http.HandleFunc("/index", servIndex)
 	http.HandleFunc("/", servIndex)
 	http.HandleFunc("/now", servNow)
+	http.HandleFunc("/chat", servChat)
 	http.HandleFunc("/profile", servProfile)
 	http.HandleFunc("/changepassword", servChangePassword)
 	http.HandleFunc("/articles", servArticles)
@@ -1224,6 +1704,13 @@ func main() {
 
 	// API endpoints
 	http.HandleFunc("/api/users/online", servOnlineUsers)
+	http.HandleFunc("/api/chat/send", servChatSend)
+	http.HandleFunc("/api/chat/messages", servChatMessages)
+	http.HandleFunc("/api/chat/conversations", servChatConversations)
+	http.HandleFunc("/api/chat/mark-read", servChatMarkRead)
+	http.HandleFunc("/api/push/subscribe", servPushSubscribe)
+	http.HandleFunc("/api/push/unsubscribe", servPushUnsubscribe)
+	http.HandleFunc("/api/push/vapid-key", servPushVapidKey)
 
 	// TODO: upate gallery to have paging, update color scheme
 	http.HandleFunc("/gallery", servGallery)

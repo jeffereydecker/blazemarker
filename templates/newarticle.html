@@ -1,6 +1,52 @@
 {{define "scripts"}}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.0/dist/quill.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/quill-image-compress@1.2.30/dist/quill.imageCompressor.min.js"></script>
+<style>
+  /* Image resizing styles */
+  .ql-editor img {
+    cursor: pointer;
+    max-width: 100%;
+    height: auto;
+  }
+  
+  .ql-editor img.resizing {
+    outline: 3px solid #0d6efd;
+    outline-offset: 3px;
+    box-shadow: 0 0 15px rgba(13, 110, 253, 0.5);
+  }
+  
+  .image-resize-handle {
+    position: fixed;
+    width: 32px;
+    height: 32px;
+    background: #0d6efd;
+    border: 4px solid white;
+    border-radius: 50%;
+    cursor: nwse-resize;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: transform 0.15s, background 0.15s;
+    pointer-events: auto;
+  }
+  
+  .image-resize-handle:hover {
+    transform: scale(1.3);
+    background: #0b5ed7;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+  }
+  
+  .image-resize-handle::after {
+    content: '⇲';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+  }
+</style>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     const quill = new Quill('#editor', {
@@ -9,13 +55,109 @@
         toolbar: [
           [{ 'header': [1, 2, 3, false] }],
           ['bold', 'italic', 'underline'],
-          ['link'],
+          ['link', 'image'],
           [{ 'list': 'ordered'}, { 'list': 'bullet' }],
           [{ 'align': [] }]
-        ]
+        ],
+        imageCompressor: {
+          quality: 0.8,
+          maxWidth: 1200,
+          maxHeight: 1200,
+          imageType: 'image/jpeg',
+          debug: false,
+          suppressErrorLogging: false,
+          insertIntoEditor: undefined
+        }
       },
       placeholder: 'Start writing...'
     });
+
+    // Image resize functionality
+    let resizingImage = null;
+    let startX, startY, startWidth, startHeight;
+    let resizeHandle = null;
+
+    // Add click handler to images for resizing
+    quill.root.addEventListener('click', function(e) {
+      if (e.target.tagName === 'IMG') {
+        e.preventDefault();
+        
+        // Remove previous resize handles
+        document.querySelectorAll('.image-resize-handle').forEach(h => h.remove());
+        
+        // Remove resizing class from all images
+        quill.root.querySelectorAll('img').forEach(img => {
+          img.classList.remove('resizing');
+        });
+        
+        // Add resizing class to clicked image
+        e.target.classList.add('resizing');
+        resizingImage = e.target;
+        
+        // Create resize handle
+        resizeHandle = document.createElement('div');
+        resizeHandle.className = 'image-resize-handle';
+        resizeHandle.title = 'Drag to resize image';
+        
+        // Position handle at bottom-right of image
+        const rect = resizingImage.getBoundingClientRect();
+        resizeHandle.style.left = (rect.right - 16) + 'px';
+        resizeHandle.style.top = (rect.bottom - 16) + 'px';
+        
+        document.body.appendChild(resizeHandle);
+        
+        // Add mousedown handler to resize handle
+        resizeHandle.addEventListener('mousedown', startResize);
+      } else if (!e.target.classList.contains('image-resize-handle')) {
+        // Clicked outside image, remove handles
+        document.querySelectorAll('.image-resize-handle').forEach(h => h.remove());
+        resizeHandle = null;
+        
+        quill.root.querySelectorAll('img').forEach(img => {
+          img.classList.remove('resizing');
+        });
+        resizingImage = null;
+      }
+    });
+
+    function startResize(e) {
+      e.preventDefault();
+      startX = e.clientX;
+      startY = e.clientY;
+      startWidth = resizingImage.offsetWidth;
+      startHeight = resizingImage.offsetHeight;
+      
+      document.addEventListener('mousemove', doResize);
+      document.addEventListener('mouseup', stopResize);
+    }
+
+    function doResize(e) {
+      if (!resizingImage) return;
+      
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      
+      // Use the larger delta to maintain aspect ratio
+      const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+      
+      let newWidth = startWidth + delta;
+      
+      // Set minimum and maximum width
+      newWidth = Math.max(100, Math.min(newWidth, quill.root.offsetWidth - 20));
+      
+      resizingImage.style.width = newWidth + 'px';
+      resizingImage.style.height = 'auto';
+      
+      // Update resize handle position
+      const rect = resizingImage.getBoundingClientRect();
+      resizeHandle.style.left = (rect.right - 16) + 'px';
+      resizeHandle.style.top = (rect.bottom - 16) + 'px';
+    }
+
+    function stopResize() {
+      document.removeEventListener('mousemove', doResize);
+      document.removeEventListener('mouseup', stopResize);
+    }
 
     // Set initial content if editing existing article
     const contentInput = document.querySelector('#content');

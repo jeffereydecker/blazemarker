@@ -76,6 +76,9 @@
 	      <a class="nav-link active" href="/articles">Articles</a>
 	    </li>
 	    <li class="nav-item">
+	      <a class="nav-link active" href="/chat">💬 Chat</a>
+	    </li>
+	    <li class="nav-item">
 	      <a class="nav-link active" href="/profile">Profile</a>
 	    </li>
 	  </ul>
@@ -87,12 +90,12 @@
   {{ template "nav_body" . }}
 
   <!-- Online Users Widget -->
-  <div id="online-users-widget" style="position: fixed; bottom: 20px; right: 20px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 15px; min-width: 200px; max-width: 300px; z-index: 1000; display: none;">
+  <div id="online-users-widget" style="position: fixed; bottom: 20px; right: 20px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 15px; min-width: 250px; max-width: 320px; z-index: 1000; display: none;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 2px solid #667eea; padding-bottom: 8px;">
-      <h6 style="margin: 0; color: #667eea; font-weight: 600;">🟢 Online Users</h6>
+      <h6 style="margin: 0; color: #667eea; font-weight: 600;">👥 Users</h6>
       <button id="close-online-widget" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #888; line-height: 1;">&times;</button>
     </div>
-    <div id="online-users-list" style="max-height: 300px; overflow-y: auto;">
+    <div id="online-users-list" style="max-height: 400px; overflow-y: auto;">
       <p style="color: #888; font-size: 14px; text-align: center;">Loading...</p>
     </div>
   </div>
@@ -129,21 +132,55 @@
           .then(response => response.json())
           .then(users => {
             if (users.length === 0) {
-              usersList.innerHTML = '<p style="color: #888; font-size: 14px; text-align: center;">No users online</p>';
+              usersList.innerHTML = '<p style="color: #888; font-size: 14px; text-align: center;">No users found</p>';
             } else {
-              usersList.innerHTML = users.map(user => {
-                const timeAgo = getTimeAgo(user.last_seen);
-                const isCurrent = user.is_current_user ? ' (you)' : '';
-                return `
-                  <div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #f0f0f0;">
-                    <div style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-right: 10px;"></div>
-                    <div style="flex: 1;">
-                      <div style="font-weight: 600; color: #333; font-size: 14px;">${user.handle || user.username}${isCurrent}</div>
-                      <div style="font-size: 12px; color: #888;">${timeAgo}</div>
+              // Separate online and offline users
+              const onlineUsers = users.filter(u => u.is_online);
+              const offlineUsers = users.filter(u => !u.is_online);
+              
+              let html = '';
+              
+              // Show online users first
+              if (onlineUsers.length > 0) {
+                html += '<div style="font-size: 11px; font-weight: 600; color: #10b981; margin: 8px 0 4px 0; text-transform: uppercase;">Online</div>';
+                html += onlineUsers.map(user => {
+                  const timeAgo = getTimeAgo(user.minutes_ago);
+                  const isCurrent = user.is_current_user ? ' (you)' : '';
+                  const messageBtn = !user.is_current_user ? `<a href="/chat?with=${user.username}" style="background: #667eea; color: white; border: none; padding: 4px 12px; border-radius: 4px; text-decoration: none; font-size: 11px; cursor: pointer;">Message</a>` : '';
+                  return `
+                    <div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #f0f0f0;">
+                      <div style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-right: 10px;"></div>
+                      <div style="flex: 1;">
+                        <div style="font-weight: 600; color: #333; font-size: 14px;">${user.handle || user.username}${isCurrent}</div>
+                        <div style="font-size: 12px; color: #10b981;">Active now</div>
+                      </div>
+                      ${messageBtn}
                     </div>
-                  </div>
-                `;
-              }).join('');
+                  `;
+                }).join('');
+              }
+              
+              // Show offline users
+              if (offlineUsers.length > 0) {
+                html += '<div style="font-size: 11px; font-weight: 600; color: #888; margin: 12px 0 4px 0; text-transform: uppercase;">Offline</div>';
+                html += offlineUsers.map(user => {
+                  const timeAgo = getTimeAgo(user.minutes_ago);
+                  const isCurrent = user.is_current_user ? ' (you)' : '';
+                  const messageBtn = !user.is_current_user ? `<a href="/chat?with=${user.username}" style="background: #667eea; color: white; border: none; padding: 4px 12px; border-radius: 4px; text-decoration: none; font-size: 11px; cursor: pointer;">Message</a>` : '';
+                  return `
+                    <div style="display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #f0f0f0;">
+                      <div style="width: 8px; height: 8px; background: #cbd5e0; border-radius: 50%; margin-right: 10px;"></div>
+                      <div style="flex: 1;">
+                        <div style="font-weight: 600; color: #333; font-size: 14px;">${user.handle || user.username}${isCurrent}</div>
+                        <div style="font-size: 12px; color: #888;">Last seen ${timeAgo}</div>
+                      </div>
+                      ${messageBtn}
+                    </div>
+                  `;
+                }).join('');
+              }
+              
+              usersList.innerHTML = html;
             }
           })
           .catch(error => {
@@ -152,17 +189,14 @@
           });
       }
 
-      function getTimeAgo(dateString) {
-        if (!dateString) return 'Just now';
-        const date = new Date(dateString);
-        const now = new Date();
-        const seconds = Math.floor((now - date) / 1000);
-        
-        if (seconds < 60) return 'Just now';
-        if (seconds < 120) return '1 minute ago';
-        if (seconds < 3600) return Math.floor(seconds / 60) + ' minutes ago';
-        if (seconds < 7200) return '1 hour ago';
-        return Math.floor(seconds / 3600) + ' hours ago';
+      function getTimeAgo(minutesAgo) {
+        if (minutesAgo < 1) return 'just now';
+        if (minutesAgo < 2) return '1 minute ago';
+        if (minutesAgo < 60) return minutesAgo + ' minutes ago';
+        if (minutesAgo < 120) return '1 hour ago';
+        if (minutesAgo < 1440) return Math.floor(minutesAgo / 60) + ' hours ago';
+        if (minutesAgo < 2880) return '1 day ago';
+        return Math.floor(minutesAgo / 1440) + ' days ago';
       }
 
       toggle.addEventListener('click', toggleWidget);
@@ -189,6 +223,11 @@
             setInterval(() => {
               registration.update();
             }, 60000); // Check every minute
+            
+            // Auto-subscribe if permission already granted, otherwise wait for user action
+            if (Notification.permission === 'granted') {
+              subscribeToPushNotifications(registration);
+            }
           })
           .catch((error) => {
             console.error('Service Worker registration failed:', error);
@@ -200,6 +239,88 @@
         console.log('New service worker activated, reloading...');
         window.location.reload();
       });
+    }
+
+    // Push notification subscription
+    async function requestPushNotificationPermission(registration) {
+      if (!('PushManager' in window)) {
+        console.log('Push notifications not supported');
+        return;
+      }
+
+      try {
+        const permission = await Notification.requestPermission();
+        
+        if (permission === 'granted') {
+          console.log('Notification permission granted');
+          await subscribeToPushNotifications(registration);
+        } else {
+          console.log('Notification permission denied');
+        }
+      } catch (error) {
+        console.error('Error requesting notification permission:', error);
+      }
+    }
+
+    async function subscribeToPushNotifications(registration) {
+      try {
+        // Get VAPID public key from server
+        const response = await fetch('/api/push/vapid-key');
+        const data = await response.json();
+        const vapidPublicKey = data.publicKey;
+
+        // Convert VAPID key
+        const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+        // Subscribe to push
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        });
+
+        // Send subscription to server
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            endpoint: subscription.endpoint,
+            keys: {
+              p256dh: arrayBufferToBase64(subscription.getKey('p256dh')),
+              auth: arrayBufferToBase64(subscription.getKey('auth'))
+            }
+          })
+        });
+
+        console.log('Push subscription saved');
+      } catch (error) {
+        console.error('Error subscribing to push notifications:', error);
+      }
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return window.btoa(binary);
     }
 
     // Handle install prompt for PWA

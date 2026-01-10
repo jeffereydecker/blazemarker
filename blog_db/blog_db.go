@@ -576,7 +576,7 @@ func AddCommentWithNotifications(db *gorm.DB, articleID uint, username, content 
 	}
 
 	// Send notifications to all users in the notify list
-	articleURL := fmt.Sprintf("https://blazemarker.com/article_view?id=%d", article.ID)
+	articleURL := fmt.Sprintf("https://blazemarker.com/article/view/%d", article.ID)
 
 	for notifyUsername := range notifyUsers {
 		// Get user profile to check email address

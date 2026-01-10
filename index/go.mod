@@ -6,11 +6,13 @@ require (
 	github.com/jeffereydecker/blazemarker/blaze_db v0.0.0-00010101000000-000000000000
 	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0
 	github.com/jeffereydecker/blazemarker/blog_db v0.0.0-20240721140226-fd4ad63d62d4
+	github.com/jeffereydecker/blazemarker/chat_db v0.0.0-00010101000000-000000000000
 	github.com/jeffereydecker/blazemarker/gallery_db v0.0.0-20240721140226-fd4ad63d62d4
+	github.com/jeffereydecker/blazemarker/push_db v0.0.0-00010101000000-000000000000
 	github.com/jeffereydecker/blazemarker/user_db v0.0.0
 	github.com/tg123/go-htpasswd v1.2.2
 	golang.org/x/crypto v0.17.0
-	gorm.io/gorm v1.25.11
+	gorm.io/gorm v1.25.12
 )
 
 require (
@@ -30,6 +32,8 @@ replace (
 	github.com/jeffereydecker/blazemarker/blaze_email => ../blaze_email
 	github.com/jeffereydecker/blazemarker/blaze_log => ../blaze_log
 	github.com/jeffereydecker/blazemarker/blog_db => ../blog_db
+	github.com/jeffereydecker/blazemarker/chat_db => ../chat_db
 	github.com/jeffereydecker/blazemarker/gallery_db => ../gallery_db
+	github.com/jeffereydecker/blazemarker/push_db => ../push_db
 	github.com/jeffereydecker/blazemarker/user_db => ../user_db
 )

@@ -62,6 +62,17 @@
               <small class="form-text text-muted">You'll receive an email when someone publishes a new public article (requires email address above)</small>
             </div>
 
+            <!-- Push Notifications -->
+            <div class="mb-3">
+              <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="notify_on_new_messages" name="notify_on_new_messages" {{ if .NotifyOnNewMessages }}checked{{ end }}>
+                <label class="form-check-label" for="notify_on_new_messages">
+                  🔔 Send me push notifications for new chat messages
+                </label>
+              </div>
+              <small class="form-text text-muted">You'll receive real-time notifications when someone sends you a message (requires browser permission)</small>
+            </div>
+
             <!-- Phone -->
             <div class="mb-3">
               <label for="phone" class="form-label">Phone Number</label>
@@ -80,5 +91,29 @@
     </div>
   </div>
 </div>
+
+<script>
+// Request notification permission when user enables push notifications
+document.getElementById('notify_on_new_messages')?.addEventListener('change', async function(e) {
+  if (e.target.checked && 'serviceWorker' in navigator && 'Notification' in window) {
+    if (Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        e.target.checked = false;
+        alert('Push notifications require browser permission. Please enable notifications in your browser settings.');
+      } else {
+        // Subscribe to push notifications
+        const registration = await navigator.serviceWorker.ready;
+        if (typeof subscribeToPushNotifications === 'function') {
+          await subscribeToPushNotifications(registration);
+        }
+      }
+    } else if (Notification.permission === 'denied') {
+      e.target.checked = false;
+      alert('Push notifications are blocked. Please enable them in your browser settings.');
+    }
+  }
+});
+</script>
 
 {{ end }}

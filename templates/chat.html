@@ -1,0 +1,413 @@
+{{define "scripts"}}
+<style>
+.conversation-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid #e9ecef;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.conversation-item:hover {
+    background-color: #f8f9fa;
+}
+
+.conversation-item.active {
+    background-color: #e7f1ff;
+    border-left: 3px solid #0d6efd;
+}
+
+.conversation-item .username {
+    font-weight: 600;
+    color: #212529;
+}
+
+.conversation-item .last-message {
+    color: #6c757d;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.conversation-item .timestamp {
+    color: #6c757d;
+    font-size: 0.75rem;
+}
+
+.conversation-item .unread-badge {
+    background: #0d6efd;
+    color: white;
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.message {
+    margin-bottom: 16px;
+    display: flex;
+}
+
+.message.sent {
+    justify-content: flex-end;
+}
+
+.message.received {
+    justify-content: flex-start;
+}
+
+.message-bubble {
+    max-width: 70%;
+    padding: 10px 14px;
+    border-radius: 18px;
+    word-wrap: break-word;
+}
+
+.message.sent .message-bubble {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.message.received .message-bubble {
+    background: white;
+    color: #212529;
+    border: 1px solid #dee2e6;
+}
+
+.message-time {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-top: 4px;
+}
+
+.message.sent .message-time {
+    text-align: right;
+}
+
+.message.received .message-time {
+    text-align: left;
+}
+
+#messagesContainer {
+    scroll-behavior: smooth;
+}
+</style>
+
+<script>
+let currentConversation = null;
+let currentUsername = null;
+let conversations = [];
+let messages = [];
+let pollInterval = null;
+
+// Format time ago
+function timeAgo(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+    
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h';
+    if (seconds < 604800) return Math.floor(seconds / 86400) + 'd';
+    return date.toLocaleDateString();
+}
+
+// Format message time
+function formatMessageTime(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// Load conversations
+async function loadConversations() {
+    try {
+        const response = await fetch('/api/chat/conversations', { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to load conversations');
+        
+        conversations = await response.json();
+        renderConversations();
+    } catch (error) {
+        console.error('Error loading conversations:', error);
+        document.getElementById('conversationsList').innerHTML = `
+            <div class="text-center text-danger p-3">
+                <p>Failed to load conversations</p>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadConversations()">Retry</button>
+            </div>
+        `;
+    }
+}
+
+// Render conversations list
+function renderConversations() {
+    const container = document.getElementById('conversationsList');
+    
+    if (!conversations || conversations.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted p-5">
+                <p>No conversations yet</p>
+                <small>Start a conversation from the Users widget</small>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = conversations.map(conv => `
+        <div class="conversation-item ${currentConversation === conv.username ? 'active' : ''}" 
+             onclick="selectConversation('${conv.username}', '${conv.handle}')">
+            <div class="d-flex justify-content-between align-items-start mb-1">
+                <span class="username">${conv.handle || conv.username}</span>
+                <span class="timestamp">${timeAgo(conv.last_message_time)}</span>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="last-message flex-grow-1">
+                    ${conv.last_message_from === currentUsername ? 'You: ' : ''}${conv.last_message}
+                </div>
+                ${conv.unread_count > 0 ? `<span class="unread-badge ms-2">${conv.unread_count}</span>` : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+// Select conversation
+async function selectConversation(username, handle) {
+    currentConversation = username;
+    
+    // Update UI
+    document.getElementById('emptyState').classList.add('d-none');
+    document.getElementById('chatHeader').classList.remove('d-none');
+    document.getElementById('messagesContainer').classList.remove('d-none');
+    document.getElementById('messageInputContainer').classList.remove('d-none');
+    
+    document.getElementById('chatUsername').textContent = handle || username;
+    document.getElementById('chatUserStatus').textContent = '@' + username;
+    
+    // Mark as active in list
+    renderConversations();
+    
+    // Load messages
+    await loadMessages(username);
+    
+    // Mark as read
+    await markAsRead(username);
+    
+    // Start polling
+    startPolling();
+}
+
+// Load messages
+async function loadMessages(username) {
+    try {
+        const response = await fetch(`/api/chat/messages?with=${username}`, { credentials: 'include' });
+        if (!response.ok) throw new Error('Failed to load messages');
+        
+        messages = await response.json();
+        renderMessages();
+        scrollToBottom();
+    } catch (error) {
+        console.error('Error loading messages:', error);
+        document.getElementById('messagesContainer').innerHTML = `
+            <div class="text-center text-danger">
+                <p>Failed to load messages</p>
+            </div>
+        `;
+    }
+}
+
+// Render messages
+function renderMessages() {
+    const container = document.getElementById('messagesContainer');
+    
+    if (!messages || messages.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <p>No messages yet. Say hello! 👋</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = messages.map(msg => {
+        const isSent = msg.from_username === currentUsername;
+        return `
+            <div class="message ${isSent ? 'sent' : 'received'}">
+                <div>
+                    <div class="message-bubble">${escapeHtml(msg.content)}</div>
+                    <div class="message-time">${formatMessageTime(msg.CreatedAt)}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Send message
+async function sendMessage(content) {
+    if (!currentConversation || !content.trim()) return;
+    
+    try {
+        const response = await fetch('/api/chat/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                to_username: currentConversation,
+                content: content.trim()
+            })
+        });
+        
+        if (!response.ok) throw new Error('Failed to send message');
+        
+        // Reload messages
+        await loadMessages(currentConversation);
+        await loadConversations();
+        
+    } catch (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message');
+    }
+}
+
+// Mark messages as read
+async function markAsRead(username) {
+    try {
+        await fetch('/api/chat/mark-read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ from_username: username })
+        });
+        
+        // Reload conversations to update unread counts
+        await loadConversations();
+    } catch (error) {
+        console.error('Error marking as read:', error);
+    }
+}
+
+// Polling for new messages
+function startPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    
+    pollInterval = setInterval(async () => {
+        if (currentConversation) {
+            const oldLength = messages.length;
+            await loadMessages(currentConversation);
+            
+            // If new messages, mark as read
+            if (messages.length > oldLength) {
+                await markAsRead(currentConversation);
+            }
+        }
+        
+        // Always reload conversations to update unread counts
+        await loadConversations();
+    }, 3000); // Poll every 3 seconds
+}
+
+// Scroll to bottom
+function scrollToBottom() {
+    const container = document.getElementById('messagesContainer');
+    container.scrollTop = container.scrollHeight;
+}
+
+// Escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Get current username from page
+function getCurrentUsername() {
+    return '{{.Username}}';
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    currentUsername = getCurrentUsername();
+    loadConversations();
+    
+    // Message form handler
+    document.getElementById('messageForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const input = document.getElementById('messageInput');
+        const content = input.value;
+        
+        if (content.trim()) {
+            input.value = '';
+            await sendMessage(content);
+        }
+    });
+    
+    // Check if we should auto-open a conversation
+    const urlParams = new URLSearchParams(window.location.search);
+    const withUser = urlParams.get('with');
+    if (withUser) {
+        // Wait a moment for conversations to load, then select
+        setTimeout(() => {
+            selectConversation(withUser, withUser);
+        }, 500);
+    }
+});
+
+// Cleanup on page leave
+window.addEventListener('beforeunload', () => {
+    if (pollInterval) clearInterval(pollInterval);
+});
+</script>
+{{end}}
+
+{{ define "nav_body" }}
+<div class="container-fluid h-100">
+    <div class="row h-100">
+        <!-- Conversations List -->
+        <div class="col-md-4 border-end d-flex flex-column h-100" style="max-height: calc(100vh - 80px);">
+            <div class="p-3 border-bottom bg-light">
+                <h5 class="mb-0">💬 Messages</h5>
+            </div>
+            <div id="conversationsList" class="flex-grow-1 overflow-auto">
+                <div class="text-center text-muted p-5">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading conversations...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="col-md-8 d-flex flex-column h-100" style="max-height: calc(100vh - 80px);">
+            <div id="chatHeader" class="p-3 border-bottom bg-light d-none">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h5 class="mb-0" id="chatUsername"></h5>
+                        <small class="text-muted" id="chatUserStatus"></small>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="emptyState" class="flex-grow-1 d-flex align-items-center justify-content-center text-muted">
+                <div class="text-center">
+                    <h3>💬</h3>
+                    <p>Select a conversation to start messaging</p>
+                </div>
+            </div>
+
+            <div id="messagesContainer" class="flex-grow-1 overflow-auto p-3 d-none" style="background: #f8f9fa;">
+                <!-- Messages will be inserted here -->
+            </div>
+
+            <div id="messageInputContainer" class="p-3 border-top bg-white d-none">
+                <form id="messageForm" class="d-flex gap-2">
+                    <input type="text" id="messageInput" class="form-control" placeholder="Type a message..." autocomplete="off" required>
+                    <button type="submit" class="btn btn-primary">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M15.854.146a.5.5 0 0 1 .11.54l-5.819 14.547a.75.75 0 0 1-1.329.124l-3.178-4.995L.643 7.184a.75.75 0 0 1 .124-1.33L15.314.037a.5.5 0 0 1 .54.11ZM6.636 10.07l2.761 4.338L14.13 2.576 6.636 10.07Zm6.787-8.201L1.591 6.602l4.339 2.76 7.494-7.493Z"/>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
