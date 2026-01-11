@@ -1,0 +1,69 @@
+{{define "scripts"}}{{end}}
+
+{{ define "nav_body" }}
+
+<div class="container mt-4">
+  <div class="row">
+    <div class="col-md-6 offset-md-3">
+      <div class="card">
+        <div class="card-header">
+          <h3>Create New User</h3>
+        </div>
+        <div class="card-body">
+          {{ if .Error }}
+          <div class="alert alert-danger" role="alert">
+            {{ .Error }}
+          </div>
+          {{ end }}
+          
+          {{ if .Success }}
+          <div class="alert alert-success" role="alert">
+            User created successfully! Username: <strong>{{ .CreatedUsername }}</strong>
+          </div>
+          <a href="/usermanagement" class="btn btn-primary">Back to User Management</a>
+          {{ else }}
+
+          <form method="POST" action="/newuser">
+            
+            <!-- Username -->
+            <div class="mb-3">
+              <label for="username" class="form-label">Username</label>
+              <input type="text" class="form-control" id="username" name="username" required autofocus 
+                     pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, underscores, and hyphens">
+              <small class="form-text text-muted">Only letters, numbers, underscores, and hyphens</small>
+            </div>
+
+            <!-- Password -->
+            <div class="mb-3">
+              <label for="password" class="form-label">Password</label>
+              <input type="password" class="form-control" id="password" name="password" required minlength="6">
+              <small class="form-text text-muted">At least 6 characters</small>
+            </div>
+
+            <!-- Confirm Password -->
+            <div class="mb-3">
+              <label for="confirm_password" class="form-label">Confirm Password</label>
+              <input type="password" class="form-control" id="confirm_password" name="confirm_password" required minlength="6">
+            </div>
+
+            <!-- Email (optional) -->
+            <div class="mb-3">
+              <label for="email" class="form-label">Email (optional)</label>
+              <input type="email" class="form-control" id="email" name="email">
+              <small class="form-text text-muted">For notifications</small>
+            </div>
+
+            <div class="d-grid gap-2">
+              <button type="submit" class="btn btn-primary">Create User</button>
+              <a href="/usermanagement" class="btn btn-secondary">Cancel</a>
+            </div>
+          </form>
+
+          {{ end }}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ end }}

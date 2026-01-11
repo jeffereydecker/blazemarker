@@ -3,8 +3,8 @@ module github.com/jeffereydecker/blazemarker/user_db
 go 1.23.0
 
 require (
-	gorm.io/gorm v1.25.7
 	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0
+	gorm.io/gorm v1.25.7
 )
 
 replace github.com/jeffereydecker/blazemarker/blaze_log => ../blaze_log

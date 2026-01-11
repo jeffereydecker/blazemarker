@@ -278,6 +278,12 @@ func getTemplateFuncs() template.FuncMap {
 			}
 			return result
 		},
+		"formatDate": func(t *time.Time) string {
+			if t == nil {
+				return "Never"
+			}
+			return t.Format("Jan 2, 2006 3:04 PM")
+		},
 	}
 }
 
@@ -703,6 +709,339 @@ func servChangePassword(w http.ResponseWriter, r *http.Request) {
 		t := template.New("base.html").Funcs(getTemplateFuncs())
 		t, _ = t.ParseFiles("../templates/base.html", "../templates/changepassword.html")
 		t.Execute(w, PageData{Success: true})
+	}
+}
+
+// getAllUsersFromHtpasswd reads all usernames from htpasswd file
+func getAllUsersFromHtpasswd() ([]string, error) {
+	htpasswdPath := "../blaze_auth/.htpasswd"
+	data, err := os.ReadFile(htpasswdPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var usernames []string
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if line != "" {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				usernames = append(usernames, parts[0])
+			}
+		}
+	}
+
+	return usernames, nil
+}
+
+// addUserToHtpasswd adds a new user to the htpasswd file
+func addUserToHtpasswd(username, password string) error {
+	htpasswdPath := "../blaze_auth/.htpasswd"
+
+	// Check if user already exists
+	data, err := os.ReadFile(htpasswdPath)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, username+":") {
+			return fmt.Errorf("user already exists")
+		}
+	}
+
+	// Hash password using bcrypt
+	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	// Append user to htpasswd file
+	newLine := username + ":" + string(hashedBytes) + "\n"
+	file, err := os.OpenFile(htpasswdPath, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = file.WriteString(newLine)
+	return err
+}
+
+// updateUserPasswordInHtpasswd updates a user's password in htpasswd file
+func updateUserPasswordInHtpasswd(username, newPassword string) error {
+	htpasswdPath := "../blaze_auth/.htpasswd"
+
+	// Hash new password using bcrypt
+	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	hashedPassword := string(hashedBytes)
+
+	// Read htpasswd file
+	data, err := os.ReadFile(htpasswdPath)
+	if err != nil {
+		return err
+	}
+
+	// Update user's line
+	lines := strings.Split(string(data), "\n")
+	var newLines []string
+	updated := false
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, username+":") {
+			newLines = append(newLines, username+":"+hashedPassword)
+			updated = true
+		} else if line != "" {
+			newLines = append(newLines, line)
+		}
+	}
+
+	if !updated {
+		return fmt.Errorf("user not found")
+	}
+
+	// Write back to file
+	newContent := strings.Join(newLines, "\n") + "\n"
+	err = os.WriteFile(htpasswdPath, []byte(newContent), 0600)
+	return err
+}
+
+func servUserManagement(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	// Check if user is admin
+	if !isAdmin(username) {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		logger.Warn("Non-admin user attempted to access user management", "username", username)
+		return
+	}
+
+	type PageData struct {
+		Error   string
+		Success string
+		Users   []user_db.UserProfile
+	}
+
+	// Get all usernames from htpasswd
+	usernames, err := getAllUsersFromHtpasswd()
+	if err != nil {
+		logger.Error("Error reading htpasswd file", "error", err)
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get user profiles for all users
+	var users []user_db.UserProfile
+	for _, uname := range usernames {
+		profile, err := user_db.GetUserProfile(db, uname)
+		if err != nil {
+			logger.Error("Error getting user profile", "username", uname, "error", err)
+			continue
+		}
+		users = append(users, *profile)
+	}
+
+	t := template.New("base.html").Funcs(getTemplateFuncs())
+	t, _ = t.ParseFiles("../templates/base.html", "../templates/usermanagement.html")
+	err = t.Execute(w, PageData{Users: users})
+	if err != nil {
+		logger.Error(err.Error())
+		return
+	}
+}
+
+func servNewUser(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	// Check if user is admin
+	if !isAdmin(username) {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		logger.Warn("Non-admin user attempted to create new user", "username", username)
+		return
+	}
+
+	type PageData struct {
+		Error           string
+		Success         bool
+		CreatedUsername string
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		// Display new user form
+		t := template.New("base.html").Funcs(getTemplateFuncs())
+		t, _ = t.ParseFiles("../templates/base.html", "../templates/newuser.html")
+		err := t.Execute(w, PageData{})
+		if err != nil {
+			logger.Error(err.Error())
+			return
+		}
+
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			logger.Error("Form parsing error")
+			http.Error(w, "Form parsing error", http.StatusBadRequest)
+			return
+		}
+
+		newUsername := r.FormValue("username")
+		password := r.FormValue("password")
+		confirmPassword := r.FormValue("confirm_password")
+		email := r.FormValue("email")
+
+		// Validate passwords match
+		if password != confirmPassword {
+			t := template.New("base.html").Funcs(getTemplateFuncs())
+			t, _ = t.ParseFiles("../templates/base.html", "../templates/newuser.html")
+			t.Execute(w, PageData{Error: "Passwords do not match"})
+			return
+		}
+
+		// Validate password length
+		if len(password) < 6 {
+			t := template.New("base.html").Funcs(getTemplateFuncs())
+			t, _ = t.ParseFiles("../templates/base.html", "../templates/newuser.html")
+			t.Execute(w, PageData{Error: "Password must be at least 6 characters"})
+			return
+		}
+
+		// Validate username format
+		if len(newUsername) < 3 {
+			t := template.New("base.html").Funcs(getTemplateFuncs())
+			t, _ = t.ParseFiles("../templates/base.html", "../templates/newuser.html")
+			t.Execute(w, PageData{Error: "Username must be at least 3 characters"})
+			return
+		}
+
+		// Add user to htpasswd file
+		err := addUserToHtpasswd(newUsername, password)
+		if err != nil {
+			logger.Error("Error adding user to htpasswd", "username", newUsername, "error", err)
+			t := template.New("base.html").Funcs(getTemplateFuncs())
+			t, _ = t.ParseFiles("../templates/base.html", "../templates/newuser.html")
+			t.Execute(w, PageData{Error: fmt.Sprintf("Error creating user: %s", err.Error())})
+			return
+		}
+
+		// Create user profile
+		profile := user_db.UserProfile{
+			Username: newUsername,
+			Handle:   newUsername,
+			Email:    email,
+		}
+		err = user_db.UpdateUserProfile(db, &profile)
+		if err != nil {
+			logger.Error("Error creating user profile", "username", newUsername, "error", err)
+			// Note: user is already in htpasswd, but profile creation failed
+		}
+
+		logger.Info("New user created", "username", newUsername, "by", username)
+
+		// Show success message
+		t := template.New("base.html").Funcs(getTemplateFuncs())
+		t, _ = t.ParseFiles("../templates/base.html", "../templates/newuser.html")
+		t.Execute(w, PageData{Success: true, CreatedUsername: newUsername})
+	}
+}
+
+func servAdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	// Check if user is admin
+	if !isAdmin(username) {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		logger.Warn("Non-admin user attempted to reset password", "username", username)
+		return
+	}
+
+	type PageData struct {
+		Error          string
+		Success        bool
+		TargetUsername string
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		targetUsername := r.URL.Query().Get("username")
+		if targetUsername == "" {
+			http.Error(w, "Username required", http.StatusBadRequest)
+			return
+		}
+
+		// Display password reset form
+		t := template.New("base.html").Funcs(getTemplateFuncs())
+		t, _ = t.ParseFiles("../templates/base.html", "../templates/adminresetpassword.html")
+		err := t.Execute(w, PageData{TargetUsername: targetUsername})
+		if err != nil {
+			logger.Error(err.Error())
+			return
+		}
+
+	case http.MethodPost:
+		if err := r.ParseForm(); err != nil {
+			logger.Error("Form parsing error")
+			http.Error(w, "Form parsing error", http.StatusBadRequest)
+			return
+		}
+
+		targetUsername := r.FormValue("target_username")
+		newPassword := r.FormValue("new_password")
+		confirmPassword := r.FormValue("confirm_password")
+
+		// Validate passwords match
+		if newPassword != confirmPassword {
+			t := template.New("base.html").Funcs(getTemplateFuncs())
+			t, _ = t.ParseFiles("../templates/base.html", "../templates/adminresetpassword.html")
+			t.Execute(w, PageData{Error: "Passwords do not match", TargetUsername: targetUsername})
+			return
+		}
+
+		// Validate password length
+		if len(newPassword) < 6 {
+			t := template.New("base.html").Funcs(getTemplateFuncs())
+			t, _ = t.ParseFiles("../templates/base.html", "../templates/adminresetpassword.html")
+			t.Execute(w, PageData{Error: "Password must be at least 6 characters", TargetUsername: targetUsername})
+			return
+		}
+
+		// Update password in htpasswd
+		err := updateUserPasswordInHtpasswd(targetUsername, newPassword)
+		if err != nil {
+			logger.Error("Error updating password", "username", targetUsername, "error", err)
+			t := template.New("base.html").Funcs(getTemplateFuncs())
+			t, _ = t.ParseFiles("../templates/base.html", "../templates/adminresetpassword.html")
+			t.Execute(w, PageData{Error: fmt.Sprintf("Error updating password: %s", err.Error()), TargetUsername: targetUsername})
+			return
+		}
+
+		logger.Info("Password reset by admin", "target_user", targetUsername, "admin", username)
+
+		// Show success message
+		t := template.New("base.html").Funcs(getTemplateFuncs())
+		t, _ = t.ParseFiles("../templates/base.html", "../templates/adminresetpassword.html")
+		t.Execute(w, PageData{Success: true, TargetUsername: targetUsername})
 	}
 }
 
@@ -1671,6 +2010,12 @@ func main() {
 	http.HandleFunc("/chat", servChat)
 	http.HandleFunc("/profile", servProfile)
 	http.HandleFunc("/changepassword", servChangePassword)
+
+	// Admin user management routes
+	http.HandleFunc("/usermanagement", servUserManagement)
+	http.HandleFunc("/newuser", servNewUser)
+	http.HandleFunc("/adminresetpassword", servAdminResetPassword)
+
 	http.HandleFunc("/articles", servArticles)
 	http.HandleFunc("/myarticles", servMyArticles)
 	http.HandleFunc("/private", servPrivateArticles)
