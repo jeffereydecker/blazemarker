@@ -32,6 +32,7 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.4);
     transition: transform 0.15s, background 0.15s;
     pointer-events: auto;
+    touch-action: none; /* Prevent scrolling on mobile while resizing */
   }
   
   .image-resize-handle:hover {
@@ -301,8 +302,6 @@
       // Set minimum and maximum width
       newWidth = Math.max(100, Math.min(newWidth, quill.root.offsetWidth - 20));
       
-      document.removeEventListener('touchmove', doResize);
-      document.removeEventListener('touchend', stopResize);
       resizingImage.style.width = newWidth + 'px';
       resizingImage.style.height = 'auto';
       
@@ -315,6 +314,8 @@
     function stopResize() {
       document.removeEventListener('mousemove', doResize);
       document.removeEventListener('mouseup', stopResize);
+      document.removeEventListener('touchmove', doResize);
+      document.removeEventListener('touchend', stopResize);
     }
 
     // Set initial content if editing existing article

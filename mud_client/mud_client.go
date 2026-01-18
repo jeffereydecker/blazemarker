@@ -3,6 +3,7 @@ package mud_client
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -14,6 +15,31 @@ import (
 )
 
 var logger = blaze_log.GetLogger()
+
+// findChromium locates chromium executable on different systems
+func findChromium() string {
+	// Common chromium paths (OpenBSD, Linux, macOS)
+	paths := []string{
+		"/usr/local/bin/chrome",     // OpenBSD via pkg_add
+		"/usr/local/bin/chromium",   // OpenBSD/Linux
+		"/usr/bin/chromium",         // Linux
+		"/usr/bin/chromium-browser", // Linux
+		"/usr/bin/google-chrome",    // Linux
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", // macOS
+		"chromium",      // In PATH
+		"chrome",        // In PATH
+		"google-chrome", // In PATH
+	}
+
+	for _, path := range paths {
+		if _, err := exec.LookPath(path); err == nil {
+			logger.Info("Found chromium at: " + path)
+			return path
+		}
+	}
+
+	return ""
+}
 
 type MUDClient struct {
 	ctx            context.Context
@@ -49,8 +75,16 @@ func (m *MUDClient) Start() error {
 	m.running = true
 	m.mu.Unlock()
 
+	// Find chromium executable (OpenBSD compatibility)
+	chromePath := findChromium()
+	if chromePath == "" {
+		m.running = false
+		return fmt.Errorf("chromium not found - please install with: pkg_add chromium")
+	}
+
 	// Create chromedp context
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(chromePath),
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
