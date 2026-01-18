@@ -15,7 +15,7 @@ var (
 func InitializeLogOnce() {
 
 	if logger == nil {
-		f, err := os.OpenFile("../logs/blazemarker.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		f, err := os.OpenFile("logs/blazemarker.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil {
 			log.Fatal("error opening log file: ", err.Error())
 		}

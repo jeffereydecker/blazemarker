@@ -1,6 +1,6 @@
 module github.com/jeffereydecker/blazemarker/mud_client
 
-go 1.23.0
+go 1.22.1
 
 require (
 	github.com/chromedp/chromedp v0.11.2
@@ -23,6 +23,3 @@ require (
 	gorm.io/gorm v1.25.12 // indirect
 )
 
-replace github.com/jeffereydecker/blazemarker/chat_db => ../chat_db
-
-replace github.com/jeffereydecker/blazemarker/blaze_log => ../blaze_log

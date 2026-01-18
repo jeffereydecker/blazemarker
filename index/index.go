@@ -28,7 +28,6 @@ import (
 	"github.com/jeffereydecker/blazemarker/calendar_db"
 	"github.com/jeffereydecker/blazemarker/chat_db"
 	"github.com/jeffereydecker/blazemarker/gallery_db"
-	"github.com/jeffereydecker/blazemarker/mud_client"
 	"github.com/jeffereydecker/blazemarker/push_db"
 	"github.com/jeffereydecker/blazemarker/user_db"
 	"github.com/tg123/go-htpasswd"
@@ -44,7 +43,6 @@ var logger *slog.Logger = blaze_log.GetLogger()
 var db *gorm.DB = blaze_db.GetDB()
 var adminUsers map[string]bool
 var calendarConfig calendar_db.CalendarConfig
-var mudClientInstance *mud_client.MUDClient
 
 // Session management
 type Session struct {
@@ -78,33 +76,56 @@ func loadAdminUsers() {
 	}
 }
 
-// loadCalendarConfig loads CalDAV configuration from config file
+// loadCalendarConfig loads CalDAV configuration from config file or environment
 func loadCalendarConfig() {
-	data, err := os.ReadFile("../config/caldav.conf")
-	if err != nil {
-		logger.Error("Failed to load CalDAV config file", "error", err)
-		return
-	}
+	// Try environment variables first (more secure)
+	serverURL := os.Getenv("CALDAV_SERVER_URL")
+	username := os.Getenv("CALDAV_USERNAME")
+	password := os.Getenv("CALDAV_PASSWORD")
+	calendar := os.Getenv("CALDAV_CALENDAR")
 
-	lines := strings.Split(string(data), "\n")
-	config := make(map[string]string)
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
+	// Fall back to config file if env vars not set
+	if serverURL == "" || username == "" || password == "" {
+		data, err := os.ReadFile("../config/caldav.conf")
+		if err != nil {
+			logger.Error("Failed to load CalDAV config file", "error", err)
+			return
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 2 {
-			config[parts[0]] = parts[1]
+
+		lines := strings.Split(string(data), "\n")
+		config := make(map[string]string)
+
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				config[parts[0]] = parts[1]
+			}
+		}
+
+		// Use config file values if env vars weren't set
+		if serverURL == "" {
+			serverURL = config["CALDAV_SERVER_URL"]
+		}
+		if username == "" {
+			username = config["CALDAV_USERNAME"]
+		}
+		if password == "" {
+			password = config["CALDAV_PASSWORD"]
+		}
+		if calendar == "" {
+			calendar = config["CALDAV_CALENDAR"]
 		}
 	}
 
 	calendarConfig = calendar_db.CalendarConfig{
-		ServerURL: config["CALDAV_SERVER_URL"],
-		Username:  config["CALDAV_USERNAME"],
-		Password:  config["CALDAV_PASSWORD"],
-		Calendar:  config["CALDAV_CALENDAR"],
+		ServerURL: serverURL,
+		Username:  username,
+		Password:  password,
+		Calendar:  calendar,
 	}
 
 	logger.Info("Loaded CalDAV config", "server", calendarConfig.ServerURL, "username", calendarConfig.Username)
@@ -585,6 +606,7 @@ func servCalendar(w http.ResponseWriter, r *http.Request) {
 	// Build calendar data structure
 	type CalendarDay struct {
 		Day          int
+		Date         string // YYYY-MM-DD format for JavaScript
 		IsOtherMonth bool
 		IsToday      bool
 		Events       []struct {
@@ -610,6 +632,7 @@ func servCalendar(w http.ResponseWriter, r *http.Request) {
 	for currentDate.Before(endDate.AddDate(0, 0, 1)) {
 		day := CalendarDay{
 			Day:          currentDate.Day(),
+			Date:         currentDate.Format("2006-01-02"),
 			IsOtherMonth: currentDate.Month() != month,
 			IsToday:      currentDate.Format("2006-01-02") == today.Format("2006-01-02"),
 		}
@@ -646,23 +669,19 @@ func servCalendar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Prepare events JSON for modal
-	eventsJSON, _ := json.Marshal(map[string]interface{}{
-		"events": func() []map[string]interface{} {
-			result := []map[string]interface{}{}
-			for _, e := range events {
-				result = append(result, map[string]interface{}{
-					"uid":         e.UID,
-					"title":       e.Title,
-					"description": e.Description,
-					"location":    e.Location,
-					"start_time":  e.StartTime,
-					"end_time":    e.EndTime,
-					"all_day":     e.AllDay,
-				})
-			}
-			return result
-		}(),
-	})
+	eventsJSONData := []map[string]interface{}{}
+	for _, e := range events {
+		eventsJSONData = append(eventsJSONData, map[string]interface{}{
+			"uid":         e.UID,
+			"title":       e.Title,
+			"description": e.Description,
+			"location":    e.Location,
+			"start_time":  e.StartTime,
+			"end_time":    e.EndTime,
+			"all_day":     e.AllDay,
+		})
+	}
+	eventsJSON, _ := json.Marshal(eventsJSONData)
 
 	// Template data
 	data := struct {
@@ -698,6 +717,225 @@ func servCalendar(w http.ResponseWriter, r *http.Request) {
 		logger.Error("Error executing calendar template", "error", err)
 		return
 	}
+}
+
+func servAddCalendarEvent(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	title := r.FormValue("title")
+	description := r.FormValue("description")
+	location := r.FormValue("location")
+	startTimeStr := r.FormValue("start_time")
+	endTimeStr := r.FormValue("end_time")
+	allDay := r.FormValue("all_day") == "true"
+	recurrenceRule := r.FormValue("recurrence_rule")
+
+	if title == "" || startTimeStr == "" {
+		http.Error(w, "Title and start time are required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse start time in local timezone
+	var startTime time.Time
+	if allDay {
+		startTime, err = time.ParseInLocation("2006-01-02", startTimeStr, time.Local)
+	} else {
+		startTime, err = time.ParseInLocation("2006-01-02T15:04", startTimeStr, time.Local)
+	}
+	if err != nil {
+		http.Error(w, "Invalid start time format", http.StatusBadRequest)
+		return
+	}
+
+	// Parse end time (default to 1 hour after start if not provided)
+	var endTime time.Time
+	if endTimeStr == "" {
+		if allDay {
+			endTime = startTime.AddDate(0, 0, 1)
+		} else {
+			endTime = startTime.Add(time.Hour)
+		}
+	} else {
+		if allDay {
+			endTime, err = time.ParseInLocation("2006-01-02", endTimeStr, time.Local)
+		} else {
+			endTime, err = time.ParseInLocation("2006-01-02T15:04", endTimeStr, time.Local)
+		}
+		if err != nil {
+			http.Error(w, "Invalid end time format", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Convert simple recurrence rule to RRULE format
+	var rrule string
+	if recurrenceRule != "" {
+		rrule = convertToRRule(recurrenceRule)
+	}
+
+	// Create event
+	event := calendar_db.Event{
+		Title:       title,
+		Description: description,
+		Location:    location,
+		StartTime:   startTime,
+		EndTime:     endTime,
+		AllDay:      allDay,
+		CreatedBy:   username,
+		RRule:       rrule,
+	}
+
+	err = calendar_db.CreateEvent(calendarConfig, event)
+	if err != nil {
+		logger.Error("Failed to create calendar event", "error", err)
+		http.Error(w, "Failed to create event", http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect back to calendar
+	http.Redirect(w, r, "/calendar", http.StatusSeeOther)
+}
+
+func servDeleteCalendarEvent(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	uid := r.FormValue("uid")
+	deleteSeries := r.FormValue("delete_series") == "true"
+
+	if uid == "" {
+		http.Error(w, "UID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract instance date from UID if it's a recurring event occurrence
+	// Format: "originalUID-20260128" -> parse 20260128
+	var instanceDate time.Time
+	if idx := strings.LastIndex(uid, "-"); idx > 0 {
+		datePart := uid[idx+1:]
+		if len(datePart) == 8 {
+			// Try to parse as date YYYYMMDD
+			parsedDate, err := time.Parse("20060102", datePart)
+			if err == nil {
+				instanceDate = parsedDate
+				logger.Info("Parsed instance date from UID", "uid", uid, "instanceDate", instanceDate.Format("2006-01-02"))
+			}
+		}
+	}
+
+	// Delete the event (or add EXDATE for single instance)
+	err := calendar_db.DeleteEvent(calendarConfig, uid, deleteSeries, instanceDate)
+	if err != nil {
+		logger.Error("Failed to delete calendar event", "error", err, "username", username, "deleteSeries", deleteSeries)
+		http.Error(w, "Failed to delete event", http.StatusInternalServerError)
+		return
+	}
+
+	if deleteSeries {
+		logger.Info("Deleted entire event series", "uid", uid)
+	} else if !instanceDate.IsZero() {
+		logger.Info("Added EXDATE for single recurring event instance", "uid", uid, "instanceDate", instanceDate.Format("2006-01-02"))
+	} else {
+		logger.Info("Deleted single event", "uid", uid)
+	}
+
+	// Return success
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Event deleted successfully",
+	})
+}
+
+// convertToRRule converts simple recurrence format to proper RRULE
+func convertToRRule(recurrenceRule string) string {
+	// Format: "DAILY:10" -> "FREQ=DAILY;INTERVAL=1;COUNT=10"
+	parts := strings.SplitN(recurrenceRule, ":", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+
+	frequency := parts[0]
+	count := parts[1]
+
+	// Always include INTERVAL=1 for better compatibility
+	return fmt.Sprintf("FREQ=%s;INTERVAL=1;COUNT=%s", frequency, count)
+}
+
+// createRecurringEvents creates recurring events based on a recurrence rule
+// DEPRECATED: Now using RRULE directly in CalDAV
+func createRecurringEvents(baseEvent calendar_db.Event, recurrenceRule string) error {
+	// Parse recurrence rule (simple implementation)
+	// Format: "DAILY:10" (10 days), "WEEKLY:4" (4 weeks), "MONTHLY:6" (6 months)
+	parts := strings.SplitN(recurrenceRule, ":", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid recurrence rule format")
+	}
+
+	frequency := parts[0]
+	count := 0
+	fmt.Sscanf(parts[1], "%d", &count)
+
+	if count <= 0 || count > 100 {
+		return fmt.Errorf("invalid recurrence count")
+	}
+
+	duration := baseEvent.EndTime.Sub(baseEvent.StartTime)
+
+	for i := 1; i <= count; i++ {
+		event := baseEvent
+		event.UID = "" // Generate new UID
+
+		switch frequency {
+		case "DAILY":
+			event.StartTime = baseEvent.StartTime.AddDate(0, 0, i)
+			event.EndTime = event.StartTime.Add(duration)
+		case "WEEKLY":
+			event.StartTime = baseEvent.StartTime.AddDate(0, 0, i*7)
+			event.EndTime = event.StartTime.Add(duration)
+		case "MONTHLY":
+			event.StartTime = baseEvent.StartTime.AddDate(0, i, 0)
+			event.EndTime = event.StartTime.Add(duration)
+		default:
+			return fmt.Errorf("unsupported frequency: %s", frequency)
+		}
+
+		err := calendar_db.CreateEvent(calendarConfig, event)
+		if err != nil {
+			logger.Error("Failed to create recurring event instance", "error", err)
+			// Continue with next instance
+		}
+	}
+
+	return nil
 }
 
 func servProfile(w http.ResponseWriter, r *http.Request) {
@@ -1937,31 +2175,6 @@ func servChatSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if message is to "funklord" and MUD client is running
-	if req.ToUsername == "funklord" {
-		if mudClientInstance != nil && mudClientInstance.IsRunning() {
-			// Send command to MUD
-			err := mudClientInstance.SendCommand(req.Content)
-			if err != nil {
-				logger.Error("Failed to send command to MUD", "error", err)
-				http.Error(w, "Failed to send command to MUD", http.StatusInternalServerError)
-				return
-			}
-			// Save user's command to chat so they can see it
-			_, err = chat_db.SendMessage(db, username, "funklord", req.Content)
-			if err != nil {
-				logger.Error("Failed to save MUD command to chat", "error", err)
-			}
-			// Return success response
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "sent to MUD"})
-			return
-		} else {
-			http.Error(w, "MUD client not running", http.StatusServiceUnavailable)
-			return
-		}
-	}
-
 	// Can't send message to yourself
 	if req.ToUsername == username {
 		http.Error(w, "Cannot send message to yourself", http.StatusBadRequest)
@@ -2354,81 +2567,6 @@ func servPushVapidKey(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"publicKey": vapidPublicKey})
 }
 
-// servMudStart starts the MUD client for the authenticated user
-func servMudStart(w http.ResponseWriter, r *http.Request) {
-	var username string
-	var ok bool
-
-	if ok, username = basicAuth(w, r); !ok {
-		logger.Info("Failed basicAuth attempt")
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Only allow jdecker to start MUD client (for now)
-	if username != "jdecker" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	// Check if already running
-	if mudClientInstance != nil && mudClientInstance.IsRunning() {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "already running"})
-		return
-	}
-
-	// Create and start MUD client
-	mudClientInstance = mud_client.NewMUDClient(db, username, "choff", "fnxer4life")
-	err := mudClientInstance.Start()
-	if err != nil {
-		logger.Error("Failed to start MUD client", "error", err)
-		http.Error(w, "Failed to start MUD client: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	logger.Info("MUD client started", "user", username)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
-}
-
-// servMudStop stops the MUD client
-func servMudStop(w http.ResponseWriter, r *http.Request) {
-	var username string
-	var ok bool
-
-	if ok, username = basicAuth(w, r); !ok {
-		logger.Info("Failed basicAuth attempt")
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Only allow jdecker to stop MUD client (for now)
-	if username != "jdecker" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	if mudClientInstance == nil || !mudClientInstance.IsRunning() {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "not running"})
-		return
-	}
-
-	mudClientInstance.Stop()
-	logger.Info("MUD client stopped", "user", username)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
-}
-
 // servShutdown gracefully shuts down the Blazemarker server
 func servShutdown(w http.ResponseWriter, r *http.Request) {
 	var username string
@@ -2452,12 +2590,6 @@ func servShutdown(w http.ResponseWriter, r *http.Request) {
 
 	logger.Info("Server shutdown initiated", "user", username)
 
-	// Stop MUD client if running
-	if mudClientInstance != nil && mudClientInstance.IsRunning() {
-		mudClientInstance.Stop()
-		logger.Info("MUD client stopped during shutdown")
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "shutting down"})
 
@@ -2466,30 +2598,6 @@ func servShutdown(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 		os.Exit(0)
 	}()
-}
-
-// servMudStatus returns the status of the MUD client
-func servMudStatus(w http.ResponseWriter, r *http.Request) {
-	var username string
-	var ok bool
-
-	if ok, username = basicAuth(w, r); !ok {
-		logger.Info("Failed basicAuth attempt")
-		return
-	}
-
-	// Only allow jdecker to check MUD status (for now)
-	if username != "jdecker" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	running := mudClientInstance != nil && mudClientInstance.IsRunning()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"running": running,
-		"user":    username,
-	})
 }
 
 func servChatUnreadCount(w http.ResponseWriter, r *http.Request) {
@@ -2582,6 +2690,8 @@ func main() {
 	http.HandleFunc("/now", servNow)
 	http.HandleFunc("/chat", servChat)
 	http.HandleFunc("/calendar", servCalendar)
+	http.HandleFunc("/calendar/event/add", servAddCalendarEvent)
+	http.HandleFunc("/calendar/event/delete", servDeleteCalendarEvent)
 	http.HandleFunc("/profile", servProfile)
 	http.HandleFunc("/changepassword", servChangePassword)
 
@@ -2632,11 +2742,6 @@ func main() {
 	http.HandleFunc("/api/push/subscribe", servPushSubscribe)
 	http.HandleFunc("/api/push/unsubscribe", servPushUnsubscribe)
 	http.HandleFunc("/api/push/vapid-key", servPushVapidKey)
-
-	// MUD client endpoints
-	http.HandleFunc("/api/mud/start", servMudStart)
-	http.HandleFunc("/api/mud/stop", servMudStop)
-	http.HandleFunc("/api/mud/status", servMudStatus)
 
 	// Server management
 	http.HandleFunc("/api/shutdown", servShutdown)

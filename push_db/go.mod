@@ -1,6 +1,6 @@
 module github.com/jeffereydecker/blazemarker/push_db
 
-go 1.23.0
+go 1.22.1
 
 require (
 	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0
@@ -13,4 +13,4 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 )
 
-replace github.com/jeffereydecker/blazemarker/blaze_log => ../blaze_log
+

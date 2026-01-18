@@ -392,6 +392,9 @@
       const badge = document.getElementById('chat-unread-badge');
       let previousUnreadCount = null; // Start as null to avoid playing on first load
       let soundEnabled = true;
+      let isFirstCheck = true; // Don't play sound on first check
+      let lastSoundTime = 0; // Track when we last played a sound
+      const SOUND_COOLDOWN = 5000; // Don't play sounds more than once every 5 seconds
       
       // Sound notification system
       const notificationSound = new Audio('/static/sounds/notification.mp3');
@@ -408,6 +411,13 @@
       });
       
       function playNotificationSound() {
+        // Check cooldown - prevent rapid-fire sounds
+        const now = Date.now();
+        if (now - lastSoundTime < SOUND_COOLDOWN) {
+          console.log('Sound on cooldown - ignoring notification');
+          return;
+        }
+        
         // Check if sounds are enabled
         const userPref = localStorage.getItem('soundNotifications');
         if (userPref === 'false' || !soundEnabled) {
@@ -415,7 +425,14 @@
           return;
         }
         
+        // Don't play sound if user is on the chat page
+        if (window.location.pathname === '/chat') {
+          console.log('Sound disabled - user is on chat page');
+          return;
+        }
+        
         console.log('Playing notification sound');
+        lastSoundTime = now;
         notificationSound.currentTime = 0;
         notificationSound.play()
           .then(() => console.log('Sound played successfully'))
@@ -439,11 +456,20 @@
             const data = await response.json();
             const count = data.count;
             
-            // Play sound if count increased (but not on first load)
-            if (previousUnreadCount !== null && count > previousUnreadCount) {
+            // Play sound only if:
+            // 1. Not the first check
+            // 2. Count increased from a value >= 0 (not null)
+            // 3. New count is > 0 (actually have unread messages)
+            // 4. Count went UP (previous was lower)
+            if (!isFirstCheck && 
+                previousUnreadCount !== null && 
+                count > 0 && 
+                count > previousUnreadCount) {
               console.log('New message detected! Previous:', previousUnreadCount, 'Current:', count);
               playNotificationSound();
             }
+            
+            isFirstCheck = false;
             previousUnreadCount = count;
             
             if (count > 0) {

@@ -1,6 +1,7 @@
 module github.com/jeffereydecker/blazemarker/initialize_db
 
-go 1.22.5
+go 1.22.1
+
 
 require (
 	github.com/jeffereydecker/blazemarker/blaze_db v0.0.0-00010101000000-000000000000
@@ -20,9 +21,3 @@ require (
 	golang.org/x/text v0.16.0 // indirect
 )
 
-replace (
-	github.com/jeffereydecker/blazemarker/blaze_db => ../blaze_db
-	github.com/jeffereydecker/blazemarker/blaze_log => ../blaze_log
-	github.com/jeffereydecker/blazemarker/blog_db => ../blog_db
-	github.com/jeffereydecker/blazemarker/gallery_db => ../gallery_db
-)

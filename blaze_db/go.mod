@@ -1,6 +1,6 @@
 module github.com/jeffereydecker/blazemarker/blaze_db
 
-go 1.22.5
+go 1.22.1
 
 require (
 	github.com/jeffereydecker/blazemarker/blog_db v0.0.0-20240721140226-fd4ad63d62d4

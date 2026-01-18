@@ -87,26 +87,6 @@
             </div>
           </form>
           
-          <!-- MUD Client Controls (only for jdecker) -->
-          {{ if eq .Username "jdecker" }}
-          <hr class="my-4">
-          <div class="mud-controls">
-            <h5 class="mb-3">MUD Client Control</h5>
-            <div class="d-flex align-items-center gap-2 mb-3">
-              <span class="badge" id="mudStatus">Checking...</span>
-              <span id="mudStatusText" class="text-muted small"></span>
-            </div>
-            <div class="d-grid gap-2">
-              <button class="btn btn-success" id="startMudBtn" onclick="startMud()">
-                🎮 Start MUD Client
-              </button>
-              <button class="btn btn-danger" id="stopMudBtn" onclick="stopMud()">
-                ⏹️ Stop MUD Client
-              </button>
-            </div>
-          </div>
-          {{ end }}
-          
         </div>
       </div>
     </div>
@@ -114,81 +94,6 @@
 </div>
 
 <script>
-// MUD Client controls
-async function checkMudStatus() {
-  try {
-    const response = await fetch('/api/mud/status', { credentials: 'include' });
-    const data = await response.json();
-    
-    const statusBadge = document.getElementById('mudStatus');
-    const statusText = document.getElementById('mudStatusText');
-    const startBtn = document.getElementById('startMudBtn');
-    const stopBtn = document.getElementById('stopMudBtn');
-    
-    if (data.running) {
-      statusBadge.className = 'badge bg-success';
-      statusBadge.textContent = 'Running';
-      statusText.textContent = 'Connected to funklord.com';
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-    } else {
-      statusBadge.className = 'badge bg-secondary';
-      statusBadge.textContent = 'Stopped';
-      statusText.textContent = 'Not connected';
-      startBtn.disabled = false;
-      stopBtn.disabled = true;
-    }
-  } catch (error) {
-    console.error('Error checking MUD status:', error);
-  }
-}
-
-async function startMud() {
-  try {
-    const response = await fetch('/api/mud/start', {
-      method: 'POST',
-      credentials: 'include'
-    });
-    
-    if (response.ok) {
-      alert('MUD client started successfully!');
-      checkMudStatus();
-    } else {
-      const text = await response.text();
-      alert('Failed to start MUD client: ' + text);
-    }
-  } catch (error) {
-    console.error('Error starting MUD:', error);
-    alert('Error starting MUD client');
-  }
-}
-
-async function stopMud() {
-  try {
-    const response = await fetch('/api/mud/stop', {
-      method: 'POST',
-      credentials: 'include'
-    });
-    
-    if (response.ok) {
-      alert('MUD client stopped successfully!');
-      checkMudStatus();
-    } else {
-      const text = await response.text();
-      alert('Failed to stop MUD client: ' + text);
-    }
-  } catch (error) {
-    console.error('Error stopping MUD:', error);
-    alert('Error stopping MUD client');
-  }
-}
-
-// Check MUD status on page load and periodically
-if (document.querySelector('.mud-controls')) {
-  checkMudStatus();
-  setInterval(checkMudStatus, 5000); // Check every 5 seconds
-}
-
 // Request notification permission when user enables push notifications
 document.getElementById('notify_on_new_messages')?.addEventListener('change', async function(e) {
   if (e.target.checked && 'serviceWorker' in navigator && 'Notification' in window) {
