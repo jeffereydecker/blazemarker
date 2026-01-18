@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/jeffereydecker/blazemarker/blaze_log"
 )
@@ -256,4 +257,118 @@ func SendCommentNotification(toEmail, toName, articleTitle, articleURL, commente
 
 	logger.Info("Comment notification sent", "to", toEmail, "article", articleTitle)
 	return nil
+}
+
+// ChatMessage represents a single chat message for the email template
+type ChatMessage struct {
+	Content string
+}
+
+// ChatNotification contains the data for chat notification emails
+type ChatNotification struct {
+	SenderName string
+	Messages   []ChatMessage
+	Timestamp  string
+	ChatURL    string
+}
+
+// SendChatNotification sends an email notification about new chat messages
+func SendChatNotification(toEmail, toName, senderName, chatURL string, messages []ChatMessage) error {
+	if toEmail == "" {
+		return fmt.Errorf("recipient email is empty")
+	}
+
+	if len(messages) == 0 {
+		return fmt.Errorf("no messages to send")
+	}
+
+	// Load and parse the email template
+	tmpl, err := template.ParseFiles("../templates/email_chat_notification.html")
+	if err != nil {
+		logger.Error("Failed to parse chat email template", "error", err)
+		return err
+	}
+
+	// Prepare template data
+	data := ChatNotification{
+		SenderName: senderName,
+		Messages:   messages,
+		Timestamp:  formatTimestamp(),
+		ChatURL:    chatURL,
+	}
+
+	// Execute template
+	var body bytes.Buffer
+	if err := tmpl.Execute(&body, data); err != nil {
+		logger.Error("Failed to execute chat email template", "error", err)
+		return err
+	}
+
+	// Prepare email headers and body
+	var subject string
+	if len(messages) == 1 {
+		subject = fmt.Sprintf("New message from %s", senderName)
+	} else {
+		subject = fmt.Sprintf("%d new messages from %s", len(messages), senderName)
+	}
+
+	msg := []byte(fmt.Sprintf(
+		"From: %s\r\n"+
+			"To: %s\r\n"+
+			"Subject: %s\r\n"+
+			"MIME-Version: 1.0\r\n"+
+			"Content-Type: text/html; charset=UTF-8\r\n"+
+			"\r\n"+
+			"%s",
+		fromAddr, toEmail, subject, body.String()))
+
+	// Send email via localhost SMTP
+	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
+
+	// Connect to SMTP server
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		logger.Error("Failed to connect to SMTP server", "error", err)
+		return err
+	}
+	defer conn.Close()
+
+	// Create SMTP client (without TLS for localhost)
+	client, err := smtp.NewClient(conn, smtpHost)
+	if err != nil {
+		logger.Error("Failed to create SMTP client", "error", err)
+		return err
+	}
+	defer client.Close()
+
+	// Set sender and recipient
+	if err := client.Mail(fromAddr); err != nil {
+		logger.Error("Failed to set sender", "error", err)
+		return err
+	}
+	if err := client.Rcpt(toEmail); err != nil {
+		logger.Error("Failed to set recipient", "error", err)
+		return err
+	}
+
+	// Send message body
+	wc, err := client.Data()
+	if err != nil {
+		logger.Error("Failed to initiate data transfer", "error", err)
+		return err
+	}
+	defer wc.Close()
+
+	if _, err := wc.Write(msg); err != nil {
+		logger.Error("Failed to write message", "error", err)
+		return err
+	}
+
+	logger.Info("Chat notification sent", "to", toEmail, "from", senderName, "messageCount", len(messages))
+	return nil
+}
+
+// formatTimestamp returns a human-readable timestamp
+func formatTimestamp() string {
+	return time.Now().Format("Monday, January 2, 2006 at 3:04 PM")
 }

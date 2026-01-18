@@ -118,7 +118,13 @@
 	      <a class="nav-link active" href="/articles">Articles</a>
 	    </li>
 	    <li class="nav-item">
-	      <a class="nav-link active" href="/chat">Chat</a>
+	      <a class="nav-link active" href="/chat">
+	        Chat
+	        <span id="chat-unread-badge" class="badge bg-danger ms-1" style="display: none; font-size: 0.75rem; vertical-align: middle;"></span>
+	      </a>
+	    </li>
+	    <li class="nav-item">
+	      <a class="nav-link active" href="/calendar">Calendar</a>
 	    </li>
 	    <li class="nav-item">
 	      <a class="nav-link active" href="/profile">Profile</a>
@@ -380,6 +386,93 @@
       console.log('PWA was installed');
       deferredPrompt = null;
     });
+
+    // Chat unread count polling with sound notifications
+    (function() {
+      const badge = document.getElementById('chat-unread-badge');
+      let previousUnreadCount = null; // Start as null to avoid playing on first load
+      let soundEnabled = true;
+      
+      // Sound notification system
+      const notificationSound = new Audio('/static/sounds/notification.mp3');
+      notificationSound.volume = 0.4; // 40% volume - adjust as needed
+      
+      // Test if sound file loads
+      notificationSound.addEventListener('error', (e) => {
+        console.error('Failed to load notification sound:', e);
+        soundEnabled = false;
+      });
+      
+      notificationSound.addEventListener('canplaythrough', () => {
+        console.log('Notification sound loaded successfully');
+      });
+      
+      function playNotificationSound() {
+        // Check if sounds are enabled
+        const userPref = localStorage.getItem('soundNotifications');
+        if (userPref === 'false' || !soundEnabled) {
+          console.log('Sound disabled by user preference or error');
+          return;
+        }
+        
+        console.log('Playing notification sound');
+        notificationSound.currentTime = 0;
+        notificationSound.play()
+          .then(() => console.log('Sound played successfully'))
+          .catch(err => {
+            console.log('Sound blocked by browser (need user interaction first):', err);
+            // After first user interaction, sounds will work
+          });
+        
+        // Also vibrate on mobile devices
+        if ('vibrate' in navigator) {
+          navigator.vibrate(200);
+        }
+      }
+      
+      async function updateUnreadCount() {
+        try {
+          const response = await fetch('/api/chat/unread-count', { 
+            credentials: 'include' 
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const count = data.count;
+            
+            // Play sound if count increased (but not on first load)
+            if (previousUnreadCount !== null && count > previousUnreadCount) {
+              console.log('New message detected! Previous:', previousUnreadCount, 'Current:', count);
+              playNotificationSound();
+            }
+            previousUnreadCount = count;
+            
+            if (count > 0) {
+              badge.textContent = count > 99 ? '99+' : count;
+              badge.style.display = 'inline-block';
+            } else {
+              badge.style.display = 'none';
+            }
+          }
+        } catch (error) {
+          console.error('Failed to fetch unread count:', error);
+        }
+      }
+      
+      // Enable sound on first user interaction
+      const enableSound = () => {
+        notificationSound.play().then(() => {
+          notificationSound.pause();
+          notificationSound.currentTime = 0;
+          console.log('Sound unlocked - notifications will play');
+        }).catch(() => {});
+        document.removeEventListener('click', enableSound);
+      };
+      document.addEventListener('click', enableSound, { once: true });
+      
+      // Update immediately and then every 10 seconds
+      updateUnreadCount();
+      setInterval(updateUnreadCount, 10000);
+    })();
   </script>
    
 </body>

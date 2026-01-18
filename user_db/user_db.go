@@ -26,11 +26,12 @@ func GetUserProfile(db *gorm.DB, username string) (*UserProfile, error) {
 	db.AutoMigrate(&UserProfile{})
 
 	var profile UserProfile
-	result := db.Where("username = ?", username).First(&profile)
+	// Use a session with silent mode to avoid logging expected "record not found" errors
+	result := db.Session(&gorm.Session{Logger: db.Logger.LogMode(1)}).Where("username = ?", username).First(&profile)
 
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
-			// Create a default profile for new users
+			// Create a default profile for new users (this is expected behavior)
 			profile = UserProfile{
 				Username: username,
 				Handle:   username,

@@ -22,10 +22,13 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/jeffereydecker/blazemarker/blaze_db"
+	"github.com/jeffereydecker/blazemarker/blaze_email"
 	"github.com/jeffereydecker/blazemarker/blaze_log"
 	"github.com/jeffereydecker/blazemarker/blog_db"
+	"github.com/jeffereydecker/blazemarker/calendar_db"
 	"github.com/jeffereydecker/blazemarker/chat_db"
 	"github.com/jeffereydecker/blazemarker/gallery_db"
+	"github.com/jeffereydecker/blazemarker/mud_client"
 	"github.com/jeffereydecker/blazemarker/push_db"
 	"github.com/jeffereydecker/blazemarker/user_db"
 	"github.com/tg123/go-htpasswd"
@@ -40,6 +43,8 @@ type UserProfile = user_db.UserProfile
 var logger *slog.Logger = blaze_log.GetLogger()
 var db *gorm.DB = blaze_db.GetDB()
 var adminUsers map[string]bool
+var calendarConfig calendar_db.CalendarConfig
+var mudClientInstance *mud_client.MUDClient
 
 // Session management
 type Session struct {
@@ -71,6 +76,38 @@ func loadAdminUsers() {
 			logger.Info("Loaded admin user", "username", username)
 		}
 	}
+}
+
+// loadCalendarConfig loads CalDAV configuration from config file
+func loadCalendarConfig() {
+	data, err := os.ReadFile("../config/caldav.conf")
+	if err != nil {
+		logger.Error("Failed to load CalDAV config file", "error", err)
+		return
+	}
+
+	lines := strings.Split(string(data), "\n")
+	config := make(map[string]string)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			config[parts[0]] = parts[1]
+		}
+	}
+
+	calendarConfig = calendar_db.CalendarConfig{
+		ServerURL: config["CALDAV_SERVER_URL"],
+		Username:  config["CALDAV_USERNAME"],
+		Password:  config["CALDAV_PASSWORD"],
+		Calendar:  config["CALDAV_CALENDAR"],
+	}
+
+	logger.Info("Loaded CalDAV config", "server", calendarConfig.ServerURL, "username", calendarConfig.Username)
 }
 
 // isAdmin checks if a username is an admin
@@ -499,6 +536,170 @@ func servChat(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func servCalendar(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	// Parse month parameter (format: YYYY-MM)
+	monthParam := r.URL.Query().Get("month")
+	var targetDate time.Time
+	if monthParam != "" {
+		parsed, err := time.Parse("2006-01", monthParam)
+		if err == nil {
+			targetDate = parsed
+		} else {
+			targetDate = time.Now()
+		}
+	} else {
+		targetDate = time.Now()
+	}
+
+	// Get first and last day of the month
+	year, month, _ := targetDate.Date()
+	firstDay := time.Date(year, month, 1, 0, 0, 0, 0, time.Local)
+	lastDay := firstDay.AddDate(0, 1, -1)
+
+	// Extend range to include days from previous/next month to fill calendar grid
+	startDate := firstDay
+	for startDate.Weekday() != time.Sunday {
+		startDate = startDate.AddDate(0, 0, -1)
+	}
+	endDate := lastDay
+	for endDate.Weekday() != time.Saturday {
+		endDate = endDate.AddDate(0, 0, 1)
+	}
+
+	// Fetch events from CalDAV
+	events, err := calendar_db.GetCalendarEvents(calendarConfig, startDate, endDate.Add(24*time.Hour))
+	if err != nil {
+		logger.Error("Failed to fetch calendar events", "error", err)
+		// Continue with empty events list
+		events = []calendar_db.Event{}
+	}
+
+	// Build calendar data structure
+	type CalendarDay struct {
+		Day          int
+		IsOtherMonth bool
+		IsToday      bool
+		Events       []struct {
+			UID                string
+			Title              string
+			AllDay             bool
+			StartTimeFormatted string
+		}
+	}
+
+	var calendarDays []CalendarDay
+	today := time.Now()
+	currentDate := startDate
+
+	// Group events by date
+	eventsByDate := make(map[string][]calendar_db.Event)
+	for _, event := range events {
+		dateKey := event.StartTime.Format("2006-01-02")
+		eventsByDate[dateKey] = append(eventsByDate[dateKey], event)
+	}
+
+	// Build calendar grid
+	for currentDate.Before(endDate.AddDate(0, 0, 1)) {
+		day := CalendarDay{
+			Day:          currentDate.Day(),
+			IsOtherMonth: currentDate.Month() != month,
+			IsToday:      currentDate.Format("2006-01-02") == today.Format("2006-01-02"),
+		}
+
+		// Add events for this day
+		dateKey := currentDate.Format("2006-01-02")
+		if dayEvents, ok := eventsByDate[dateKey]; ok {
+			for _, event := range dayEvents {
+				day.Events = append(day.Events, struct {
+					UID                string
+					Title              string
+					AllDay             bool
+					StartTimeFormatted string
+				}{
+					UID:                event.UID,
+					Title:              event.Title,
+					AllDay:             event.AllDay,
+					StartTimeFormatted: event.StartTime.Format("3:04 PM"),
+				})
+			}
+		}
+
+		calendarDays = append(calendarDays, day)
+		currentDate = currentDate.AddDate(0, 0, 1)
+	}
+
+	// Get upcoming events (next 30 days)
+	upcomingStart := time.Now()
+	upcomingEnd := upcomingStart.AddDate(0, 0, 30)
+	upcomingEvents, err := calendar_db.GetCalendarEvents(calendarConfig, upcomingStart, upcomingEnd)
+	if err != nil {
+		logger.Error("Failed to fetch upcoming events", "error", err)
+		upcomingEvents = []calendar_db.Event{}
+	}
+
+	// Prepare events JSON for modal
+	eventsJSON, _ := json.Marshal(map[string]interface{}{
+		"events": func() []map[string]interface{} {
+			result := []map[string]interface{}{}
+			for _, e := range events {
+				result = append(result, map[string]interface{}{
+					"uid":         e.UID,
+					"title":       e.Title,
+					"description": e.Description,
+					"location":    e.Location,
+					"start_time":  e.StartTime,
+					"end_time":    e.EndTime,
+					"all_day":     e.AllDay,
+				})
+			}
+			return result
+		}(),
+	})
+
+	// Template data
+	data := struct {
+		Username       string
+		MonthYear      string
+		PrevMonth      string
+		NextMonth      string
+		CalendarDays   []CalendarDay
+		UpcomingEvents []calendar_db.Event
+		EventsJSON     template.JS
+		UserProfile    *UserProfile
+	}{
+		Username:       username,
+		MonthYear:      firstDay.Format("January 2006"),
+		PrevMonth:      firstDay.AddDate(0, -1, 0).Format("2006-01"),
+		NextMonth:      firstDay.AddDate(0, 1, 0).Format("2006-01"),
+		CalendarDays:   calendarDays,
+		UpcomingEvents: upcomingEvents,
+		EventsJSON:     template.JS(string(eventsJSON)),
+	}
+
+	// Get user profile for template
+	profile, err := user_db.GetUserProfile(db, username)
+	if err == nil {
+		profile.IsAdmin = isAdmin(username)
+		data.UserProfile = profile
+	}
+
+	t := template.New("base.html").Funcs(getTemplateFuncs())
+	t, _ = t.ParseFiles("../templates/base.html", "../templates/calendar.html")
+	err = t.Execute(w, data)
+	if err != nil {
+		logger.Error("Error executing calendar template", "error", err)
+		return
+	}
+}
+
 func servProfile(w http.ResponseWriter, r *http.Request) {
 	var username string
 	var ok bool
@@ -615,9 +816,10 @@ func servChangePassword(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, 2<<20) // 2MB limit for password changes
 		if err := r.ParseForm(); err != nil {
-			logger.Error("Form parsing error")
-			http.Error(w, "Form parsing error", http.StatusBadRequest)
+			logger.Error("Form parsing error in changepassword", "error", err, "content-length", r.Header.Get("Content-Length"))
+			http.Error(w, fmt.Sprintf("Form parsing error: %v", err), http.StatusBadRequest)
 			return
 		}
 
@@ -894,9 +1096,10 @@ func servNewUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, 2<<20) // 2MB limit for user creation
 		if err := r.ParseForm(); err != nil {
-			logger.Error("Form parsing error")
-			http.Error(w, "Form parsing error", http.StatusBadRequest)
+			logger.Error("Form parsing error in newuser", "error", err, "content-length", r.Header.Get("Content-Length"))
+			http.Error(w, fmt.Sprintf("Form parsing error: %v", err), http.StatusBadRequest)
 			return
 		}
 
@@ -1000,9 +1203,10 @@ func servAdminResetPassword(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, 2<<20) // 2MB limit for password reset
 		if err := r.ParseForm(); err != nil {
-			logger.Error("Form parsing error")
-			http.Error(w, "Form parsing error", http.StatusBadRequest)
+			logger.Error("Form parsing error in adminresetpassword", "error", err, "content-length", r.Header.Get("Content-Length"))
+			http.Error(w, fmt.Sprintf("Form parsing error: %v", err), http.StatusBadRequest)
 			return
 		}
 
@@ -1122,9 +1326,12 @@ func servArticle(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		logger.Debug("servArticle()[POST]")
 
+		// Set max memory for form parsing to 32MB (default is 32MB for multipart, but 10MB for regular forms)
+		r.Body = http.MaxBytesReader(w, r.Body, 32<<20) // 32MB limit
+
 		if err := r.ParseForm(); err != nil {
-			logger.Error("Form parsing error")
-			http.Error(w, "Form parsing error", http.StatusBadRequest)
+			logger.Error("Form parsing error", "error", err, "content-length", r.Header.Get("Content-Length"))
+			http.Error(w, fmt.Sprintf("Form parsing error: %v", err), http.StatusBadRequest)
 			return
 		}
 
@@ -1622,6 +1829,84 @@ func servOnlineUsers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func servUploadArticleImage(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt for image upload")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse multipart form with 10MB limit
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		logger.Error("Failed to parse multipart form", "error", err)
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		logger.Error("Failed to get image from form", "error", err)
+		http.Error(w, "No image provided", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Validate file type
+	contentType := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		http.Error(w, "File must be an image", http.StatusBadRequest)
+		return
+	}
+
+	// Generate unique filename with timestamp
+	ext := filepath.Ext(header.Filename)
+	if ext == "" {
+		ext = ".jpg"
+	}
+	filename := fmt.Sprintf("%d_%s%s", time.Now().Unix(), username, ext)
+
+	// Create articles directory if it doesn't exist
+	articlesDir := "../photos/articles"
+	if err := os.MkdirAll(articlesDir, 0755); err != nil {
+		logger.Error("Failed to create articles directory", "error", err)
+		http.Error(w, "Server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Save file
+	filepath := filepath.Join(articlesDir, filename)
+	dst, err := os.Create(filepath)
+	if err != nil {
+		logger.Error("Failed to create image file", "error", err)
+		http.Error(w, "Failed to save image", http.StatusInternalServerError)
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		logger.Error("Failed to write image file", "error", err)
+		http.Error(w, "Failed to save image", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info("Article image uploaded", "username", username, "filename", filename)
+
+	// Return the URL
+	imageURL := "/photos/articles/" + filename
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"url": imageURL,
+	})
+}
+
 func servChatSend(w http.ResponseWriter, r *http.Request) {
 	var username string
 	var ok bool
@@ -1652,6 +1937,31 @@ func servChatSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if message is to "funklord" and MUD client is running
+	if req.ToUsername == "funklord" {
+		if mudClientInstance != nil && mudClientInstance.IsRunning() {
+			// Send command to MUD
+			err := mudClientInstance.SendCommand(req.Content)
+			if err != nil {
+				logger.Error("Failed to send command to MUD", "error", err)
+				http.Error(w, "Failed to send command to MUD", http.StatusInternalServerError)
+				return
+			}
+			// Save user's command to chat so they can see it
+			_, err = chat_db.SendMessage(db, username, "funklord", req.Content)
+			if err != nil {
+				logger.Error("Failed to save MUD command to chat", "error", err)
+			}
+			// Return success response
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "sent to MUD"})
+			return
+		} else {
+			http.Error(w, "MUD client not running", http.StatusServiceUnavailable)
+			return
+		}
+	}
+
 	// Can't send message to yourself
 	if req.ToUsername == username {
 		http.Error(w, "Cannot send message to yourself", http.StatusBadRequest)
@@ -1668,6 +1978,9 @@ func servChatSend(w http.ResponseWriter, r *http.Request) {
 
 	// Send push notification to recipient
 	go sendMessageNotification(db, username, req.ToUsername, req.Content)
+
+	// Check if email notification should be sent
+	go sendChatEmailNotification(db, username, req.ToUsername)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(message)
@@ -1751,6 +2064,98 @@ func sendMessageNotification(db *gorm.DB, fromUsername, toUsername, content stri
 	//         }
 	//     }
 	// }
+}
+
+// sendChatEmailNotification sends an email notification if user is offline/inactive
+func sendChatEmailNotification(db *gorm.DB, fromUsername, toUsername string) {
+	// Get recipient's profile
+	recipientProfile, err := user_db.GetUserProfile(db, toUsername)
+	if err != nil {
+		logger.Error("Failed to get recipient profile for email notification", "username", toUsername, "error", err)
+		return
+	}
+
+	// Check if recipient has email and wants notifications
+	if recipientProfile.Email == "" || !recipientProfile.NotifyOnNewMessages {
+		return
+	}
+
+	// Check if user has been inactive (no activity in last 5 minutes)
+	// OR if messages are more than 1 day old and unread
+	now := time.Now()
+	inactiveThreshold := now.Add(-5 * time.Minute)
+
+	isInactive := recipientProfile.LastSeen == nil || recipientProfile.LastSeen.Before(inactiveThreshold)
+
+	if !isInactive {
+		// User is active, don't send email
+		return
+	}
+
+	// Get unread messages from sender that haven't been emailed yet
+	unreadMessages, err := chat_db.GetUnreadMessagesForEmail(db, toUsername, fromUsername)
+	if err != nil || len(unreadMessages) == 0 {
+		return
+	}
+
+	// Check if oldest message is more than 1 day old
+	oldestMessage := unreadMessages[0]
+	oneDayAgo := now.Add(-24 * time.Hour)
+
+	// Send email if user is inactive OR if messages are over a day old
+	shouldSendEmail := isInactive && (oldestMessage.CreatedAt.Before(oneDayAgo) || len(unreadMessages) >= 3)
+
+	if !shouldSendEmail {
+		return
+	}
+
+	// Get sender's name
+	senderProfile, err := user_db.GetUserProfile(db, fromUsername)
+	senderName := fromUsername
+	if err == nil && senderProfile.Handle != "" {
+		senderName = senderProfile.Handle
+	}
+
+	// Prepare messages for email
+	emailMessages := make([]blaze_email.ChatMessage, len(unreadMessages))
+	messageIDs := make([]uint, len(unreadMessages))
+
+	for i, msg := range unreadMessages {
+		emailMessages[i] = blaze_email.ChatMessage{
+			Content: msg.Content,
+		}
+		messageIDs[i] = msg.ID
+	}
+
+	// Build chat URL
+	chatURL := fmt.Sprintf("https://blazemarker.com/chat?with=%s", fromUsername)
+
+	// Send email
+	recipientName := toUsername
+	if recipientProfile.Handle != "" {
+		recipientName = recipientProfile.Handle
+	}
+
+	err = blaze_email.SendChatNotification(
+		recipientProfile.Email,
+		recipientName,
+		senderName,
+		chatURL,
+		emailMessages,
+	)
+
+	if err != nil {
+		logger.Error("Failed to send chat email notification", "error", err, "to", toUsername, "from", fromUsername)
+		return
+	}
+
+	// Mark messages as emailed
+	err = chat_db.MarkEmailNotificationSent(db, messageIDs)
+	if err != nil {
+		logger.Error("Failed to mark messages as emailed", "error", err)
+	}
+
+	logger.Info("Chat email notification sent", "to", toUsername, "from", fromUsername, "messageCount", len(unreadMessages))
 }
 
 func servChatMessages(w http.ResponseWriter, r *http.Request) {
@@ -1949,6 +2354,170 @@ func servPushVapidKey(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"publicKey": vapidPublicKey})
 }
 
+// servMudStart starts the MUD client for the authenticated user
+func servMudStart(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Only allow jdecker to start MUD client (for now)
+	if username != "jdecker" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Check if already running
+	if mudClientInstance != nil && mudClientInstance.IsRunning() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "already running"})
+		return
+	}
+
+	// Create and start MUD client
+	mudClientInstance = mud_client.NewMUDClient(db, username, "choff", "fnxer4life")
+	err := mudClientInstance.Start()
+	if err != nil {
+		logger.Error("Failed to start MUD client", "error", err)
+		http.Error(w, "Failed to start MUD client: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info("MUD client started", "user", username)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
+
+// servMudStop stops the MUD client
+func servMudStop(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Only allow jdecker to stop MUD client (for now)
+	if username != "jdecker" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if mudClientInstance == nil || !mudClientInstance.IsRunning() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "not running"})
+		return
+	}
+
+	mudClientInstance.Stop()
+	logger.Info("MUD client stopped", "user", username)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+}
+
+// servShutdown gracefully shuts down the Blazemarker server
+func servShutdown(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Only allow admin users to shutdown server
+	if !isAdmin(username) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	logger.Info("Server shutdown initiated", "user", username)
+
+	// Stop MUD client if running
+	if mudClientInstance != nil && mudClientInstance.IsRunning() {
+		mudClientInstance.Stop()
+		logger.Info("MUD client stopped during shutdown")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "shutting down"})
+
+	// Give response time to send
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		os.Exit(0)
+	}()
+}
+
+// servMudStatus returns the status of the MUD client
+func servMudStatus(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	// Only allow jdecker to check MUD status (for now)
+	if username != "jdecker" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	running := mudClientInstance != nil && mudClientInstance.IsRunning()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"running": running,
+		"user":    username,
+	})
+}
+
+func servChatUnreadCount(w http.ResponseWriter, r *http.Request) {
+	var username string
+	var ok bool
+
+	if ok, username = basicAuth(w, r); !ok {
+		logger.Info("Failed basicAuth attempt")
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get unread count
+	count, err := chat_db.GetUnreadCount(db, username)
+	if err != nil {
+		logger.Error("Failed to get unread count", "error", err)
+		http.Error(w, "Failed to get unread count", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int64{"count": count})
+}
+
 func main() {
 
 	currentUser, err := user.Current()
@@ -1959,6 +2528,9 @@ func main() {
 	// Load admin users from config
 	loadAdminUsers()
 
+	// Load CalDAV configuration
+	loadCalendarConfig()
+
 	// Start session cleanup routine
 	cleanupExpiredSessions()
 
@@ -1966,6 +2538,7 @@ func main() {
 	// TODO: Look for ways to lock down to specific directories
 	http.Handle("/photos/galleries/", http.StripPrefix("/photos/galleries/", http.FileServer(http.Dir("../photos/galleries"))))
 	http.Handle("/photos/avatars/", http.StripPrefix("/photos/avatars/", http.FileServer(http.Dir("../photos/avatars"))))
+	http.Handle("/photos/articles/", http.StripPrefix("/photos/articles/", http.FileServer(http.Dir("../photos/articles"))))
 	http.Handle("/bootstrap-5.3.0-dist/", http.StripPrefix("/bootstrap-5.3.0-dist/", http.FileServer(http.Dir("../bootstrap-5.3.0-dist"))))
 	http.Handle("/tinymce/", http.StripPrefix("/tinymce/", http.FileServer(http.Dir("../tinymce"))))
 	http.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("../css"))))
@@ -2008,6 +2581,7 @@ func main() {
 	http.HandleFunc("/", servIndex)
 	http.HandleFunc("/now", servNow)
 	http.HandleFunc("/chat", servChat)
+	http.HandleFunc("/calendar", servCalendar)
 	http.HandleFunc("/profile", servProfile)
 	http.HandleFunc("/changepassword", servChangePassword)
 
@@ -2048,14 +2622,24 @@ func main() {
 	})
 
 	// API endpoints
+	http.HandleFunc("/api/upload-article-image", servUploadArticleImage)
 	http.HandleFunc("/api/users/online", servOnlineUsers)
 	http.HandleFunc("/api/chat/send", servChatSend)
 	http.HandleFunc("/api/chat/messages", servChatMessages)
 	http.HandleFunc("/api/chat/conversations", servChatConversations)
 	http.HandleFunc("/api/chat/mark-read", servChatMarkRead)
+	http.HandleFunc("/api/chat/unread-count", servChatUnreadCount)
 	http.HandleFunc("/api/push/subscribe", servPushSubscribe)
 	http.HandleFunc("/api/push/unsubscribe", servPushUnsubscribe)
 	http.HandleFunc("/api/push/vapid-key", servPushVapidKey)
+
+	// MUD client endpoints
+	http.HandleFunc("/api/mud/start", servMudStart)
+	http.HandleFunc("/api/mud/stop", servMudStop)
+	http.HandleFunc("/api/mud/status", servMudStatus)
+
+	// Server management
+	http.HandleFunc("/api/shutdown", servShutdown)
 
 	// TODO: upate gallery to have paging, update color scheme
 	http.HandleFunc("/gallery", servGallery)

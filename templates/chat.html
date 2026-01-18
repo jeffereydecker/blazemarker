@@ -62,10 +62,13 @@
 }
 
 .message-bubble {
-    max-width: 70%;
-    padding: 10px 14px;
+    max-width: 85%;
+    min-width: 120px;
+    padding: 12px 16px;
     border-radius: 18px;
     word-wrap: break-word;
+    word-break: break-word;
+    white-space: pre-wrap;
 }
 
 .message.sent .message-bubble {
@@ -206,9 +209,16 @@ async function loadMessages(username) {
         const response = await fetch(`/api/chat/messages?with=${username}`, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to load messages');
         
+        const container = document.getElementById('messagesContainer');
+        const wasNearBottom = isNearBottom(container);
+        
         messages = await response.json();
         renderMessages();
-        scrollToBottom();
+        
+        // Only auto-scroll if user was already at the bottom
+        if (wasNearBottom) {
+            scrollToBottom();
+        }
     } catch (error) {
         console.error('Error loading messages:', error);
         document.getElementById('messagesContainer').innerHTML = `
@@ -313,6 +323,13 @@ function startPolling() {
 function scrollToBottom() {
     const container = document.getElementById('messagesContainer');
     container.scrollTop = container.scrollHeight;
+}
+
+// Check if user is near bottom of chat (within 100px)
+function isNearBottom(container) {
+    if (!container) return true;
+    const threshold = 100;
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
 }
 
 // Escape HTML

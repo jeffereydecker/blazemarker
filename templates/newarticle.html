@@ -1,13 +1,17 @@
 {{define "scripts"}}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://cdn.jsdelivr.net/npm/quill@2.0.0/dist/quill.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/quill-image-compress@1.2.30/dist/quill.imageCompressor.min.js"></script>
 <style>
   /* Image resizing styles */
   .ql-editor img {
     cursor: pointer;
     max-width: 100%;
     height: auto;
+  }
+  
+  /* Default width for images without explicit width set */
+  .ql-editor img:not([style*="width"]) {
+    width: min(600px, 100%);
   }
   
   .ql-editor img.resizing {
@@ -59,18 +63,157 @@
           [{ 'list': 'ordered'}, { 'list': 'bullet' }],
           [{ 'align': [] }]
         ],
-        imageCompressor: {
-          quality: 0.8,
-          maxWidth: 1200,
-          maxHeight: 1200,
-          imageType: 'image/jpeg',
-          debug: false,
-          suppressErrorLogging: false,
-          insertIntoEditor: undefined
+        clipboard: {
+          matchVisual: false
         }
       },
       placeholder: 'Start writing...'
     });
+
+    // Prevent Quill from handling pasted images by overriding clipboard
+    const clipboard = quill.getModule('clipboard');
+    clipboard.addMatcher('IMG', function(node, delta) {
+      // Return empty delta to prevent default image paste
+      return new (Quill.import('delta'))();
+    });
+
+    // Override the image button to use file picker instead of URL prompt
+    quill.getModule('toolbar').addHandler('image', function() {
+      // Create a hidden file input
+      const input = document.createElement('input');
+      input.setAttribute('type', 'file');
+      input.setAttribute('accept', 'image/*');
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      
+      input.addEventListener('change', function() {
+        const file = input.files[0];
+        if (file) {
+          // Get cursor position for inserting image after upload
+          const range = quill.getSelection(true);
+          
+          // Upload image to server
+          const formData = new FormData();
+          formData.append('image', file);
+          
+          fetch('/api/upload-article-image', {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+          })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error('Upload failed');
+            }
+            return response.json();
+          })
+          .then(data => {
+            // Insert uploaded image at cursor position
+            quill.insertEmbed(range.index, 'image', data.url);
+            quill.setSelection(range.index + 1);
+            
+            // Find the newly inserted image and set its size when it loads
+            const imgs = quill.root.querySelectorAll('img');
+            for (let img of imgs) {
+              if (img.src.includes(data.url)) {
+                // Set size after image loads to ensure it's in the DOM
+                const setSizeWhenReady = () => {
+                  img.setAttribute('style', 'width: 600px; max-width: 100%; height: auto;');
+                };
+                
+                if (img.complete) {
+                  // Image already loaded
+                  setSizeWhenReady();
+                } else {
+                  // Wait for image to load
+                  img.onload = setSizeWhenReady;
+                }
+                break;
+              }
+            }
+          })
+          .catch(error => {
+            console.error('Image upload failed:', error);
+            alert('Failed to upload image. Please try again.');
+          });
+        }
+        document.body.removeChild(input);
+      });
+      
+      input.click();
+    });
+
+    // Handle pasted images - use capture phase to intercept before Quill
+    quill.root.addEventListener('paste', function(e) {
+      const clipboardData = e.clipboardData || window.clipboardData;
+      if (!clipboardData) return;
+      
+      const items = clipboardData.items;
+      let hasImage = false;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          hasImage = true;
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const file = items[i].getAsFile();
+          const range = quill.getSelection(true);
+          
+          // Upload image to server
+          const formData = new FormData();
+          formData.append('image', file);
+          
+          fetch('/api/upload-article-image', {
+            method: 'POST',
+            body: formData,
+            credentials: 'same-origin'
+          })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error('Upload failed');
+            }
+            return response.json();
+          })
+          .then(data => {
+            // Insert uploaded image at cursor position
+            quill.insertEmbed(range.index, 'image', data.url);
+            quill.setSelection(range.index + 1);
+            
+            // Find the newly inserted image and set its size when it loads
+            const imgs = quill.root.querySelectorAll('img');
+            for (let img of imgs) {
+              if (img.src.includes(data.url)) {
+                // Set size after image loads to ensure it's in the DOM
+                const setSizeWhenReady = () => {
+                  img.setAttribute('style', 'width: 600px; max-width: 100%; height: auto;');
+                };
+                
+                if (img.complete) {
+                  // Image already loaded
+                  setSizeWhenReady();
+                } else {
+                  // Wait for image to load
+                  img.onload = setSizeWhenReady;
+                }
+                break;
+              }
+            }
+          })
+          .catch(error => {
+            console.error('Image upload failed:', error);
+            alert('Failed to upload image. Please try again.');
+          });
+          
+          break;
+        }
+      }
+      
+      // If we found an image, stop all default behavior
+      if (hasImage) {
+        e.stopImmediatePropagation();
+        return false;
+      }
+    }, true); // Use capture phase
 
     // Image resize functionality
     let resizingImage = null;
@@ -106,8 +249,9 @@
         
         document.body.appendChild(resizeHandle);
         
-        // Add mousedown handler to resize handle
+        // Add mouse and touch handlers to resize handle
         resizeHandle.addEventListener('mousedown', startResize);
+        resizeHandle.addEventListener('touchstart', startResize);
       } else if (!e.target.classList.contains('image-resize-handle')) {
         // Clicked outside image, remove handles
         document.querySelectorAll('.image-resize-handle').forEach(h => h.remove());
@@ -122,20 +266,32 @@
 
     function startResize(e) {
       e.preventDefault();
-      startX = e.clientX;
-      startY = e.clientY;
+      
+      // Get coordinates from either mouse or touch event
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      
+      startX = clientX;
+      startY = clientY;
       startWidth = resizingImage.offsetWidth;
       startHeight = resizingImage.offsetHeight;
       
       document.addEventListener('mousemove', doResize);
       document.addEventListener('mouseup', stopResize);
+      document.addEventListener('touchmove', doResize);
+      document.addEventListener('touchend', stopResize);
     }
 
     function doResize(e) {
       if (!resizingImage) return;
+      e.preventDefault();
       
-      const deltaX = e.clientX - startX;
-      const deltaY = e.clientY - startY;
+      // Get coordinates from either mouse or touch event
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      
+      const deltaX = clientX - startX;
+      const deltaY = clientY - startY;
       
       // Use the larger delta to maintain aspect ratio
       const delta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
@@ -145,6 +301,8 @@
       // Set minimum and maximum width
       newWidth = Math.max(100, Math.min(newWidth, quill.root.offsetWidth - 20));
       
+      document.removeEventListener('touchmove', doResize);
+      document.removeEventListener('touchend', stopResize);
       resizingImage.style.width = newWidth + 'px';
       resizingImage.style.height = 'auto';
       

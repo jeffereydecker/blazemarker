@@ -12,11 +12,13 @@ var logger = blaze_log.GetLogger()
 // Message represents a chat message between two users
 type Message struct {
 	gorm.Model
-	FromUsername string     `gorm:"index;not null" json:"from_username"`
-	ToUsername   string     `gorm:"index;not null" json:"to_username"`
-	Content      string     `gorm:"type:text;not null" json:"content"`
-	IsRead       bool       `gorm:"default:false;index" json:"is_read"`
-	ReadAt       *time.Time `json:"read_at,omitempty"`
+	FromUsername            string     `gorm:"index;not null" json:"from_username"`
+	ToUsername              string     `gorm:"index;not null" json:"to_username"`
+	Content                 string     `gorm:"type:text;not null" json:"content"`
+	IsRead                  bool       `gorm:"default:false;index" json:"is_read"`
+	ReadAt                  *time.Time `json:"read_at,omitempty"`
+	EmailNotificationSent   bool       `gorm:"default:false" json:"-"`
+	EmailNotificationSentAt *time.Time `json:"-"`
 }
 
 // SendMessage creates a new chat message
@@ -213,4 +215,47 @@ func GetUnreadCount(db *gorm.DB, username string) (int64, error) {
 	}
 
 	return count, nil
+}
+
+// GetUnreadMessagesForEmail gets unread messages from a sender that haven't been emailed yet
+func GetUnreadMessagesForEmail(db *gorm.DB, toUsername, fromUsername string) ([]Message, error) {
+	db.AutoMigrate(&Message{})
+
+	var messages []Message
+	result := db.Where(
+		"to_username = ? AND from_username = ? AND is_read = ? AND email_notification_sent = ?",
+		toUsername, fromUsername, false, false,
+	).Order("created_at ASC").Find(&messages)
+
+	if result.Error != nil {
+		logger.Error("Failed to get unread messages for email", "to", toUsername, "from", fromUsername, "error", result.Error)
+		return nil, result.Error
+	}
+
+	return messages, nil
+}
+
+// MarkEmailNotificationSent marks messages as having had an email notification sent
+func MarkEmailNotificationSent(db *gorm.DB, messageIDs []uint) error {
+	if len(messageIDs) == 0 {
+		return nil
+	}
+
+	db.AutoMigrate(&Message{})
+
+	now := time.Now()
+	result := db.Model(&Message{}).
+		Where("id IN ?", messageIDs).
+		Updates(map[string]interface{}{
+			"email_notification_sent":    true,
+			"email_notification_sent_at": now,
+		})
+
+	if result.Error != nil {
+		logger.Error("Failed to mark email notifications as sent", "messageIDs", messageIDs, "error", result.Error)
+		return result.Error
+	}
+
+	logger.Info("Email notifications marked as sent", "count", result.RowsAffected)
+	return nil
 }

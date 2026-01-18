@@ -1,0 +1,221 @@
+{{define "scripts"}}
+<style>
+.calendar-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 8px;
+}
+
+.calendar-nav {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: #dee2e6;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.calendar-day-header {
+    background: #f8f9fa;
+    padding: 0.75rem;
+    text-align: center;
+    font-weight: 600;
+    color: #495057;
+}
+
+.calendar-day {
+    background: white;
+    min-height: 120px;
+    padding: 0.5rem;
+    position: relative;
+}
+
+.calendar-day.other-month {
+    background: #f8f9fa;
+    color: #adb5bd;
+}
+
+.calendar-day.today {
+    background: #e7f1ff;
+}
+
+.day-number {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.event {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    margin-bottom: 0.25rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.event:hover {
+    opacity: 0.9;
+}
+
+.event.all-day {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.upcoming-events {
+    margin-top: 2rem;
+}
+
+.event-card {
+    border-left: 4px solid #667eea;
+}
+
+.event-card.all-day {
+    border-left-color: #10b981;
+}
+
+.event-modal-content {
+    max-width: 600px;
+}
+</style>
+
+<script>
+// Event modal handling
+function showEventDetails(uid) {
+    const event = events.find(e => e.uid === uid);
+    if (!event) return;
+    
+    document.getElementById('eventTitle').textContent = event.title;
+    document.getElementById('eventTime').textContent = formatEventTime(event);
+    document.getElementById('eventLocation').textContent = event.location || 'No location';
+    document.getElementById('eventDescription').textContent = event.description || 'No description';
+    
+    new bootstrap.Modal(document.getElementById('eventModal')).show();
+}
+
+function formatEventTime(event) {
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time);
+    
+    if (event.all_day) {
+        return start.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    }
+    
+    return `${start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at ${start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} - ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+// Store events for modal
+const events = {{ .EventsJSON }};
+</script>
+{{end}}
+
+{{ define "nav_body" }}
+<div class="calendar-container my-4">
+    <div class="calendar-header">
+        <h2 class="mb-0">📅 Family Calendar</h2>
+        <div class="calendar-nav">
+            <a href="?month={{ .PrevMonth }}" class="btn btn-light btn-sm">← Previous</a>
+            <span class="fs-5">{{ .MonthYear }}</span>
+            <a href="?month={{ .NextMonth }}" class="btn btn-light btn-sm">Next →</a>
+        </div>
+    </div>
+
+    <div class="calendar-grid">
+        <!-- Day headers -->
+        <div class="calendar-day-header">Sunday</div>
+        <div class="calendar-day-header">Monday</div>
+        <div class="calendar-day-header">Tuesday</div>
+        <div class="calendar-day-header">Wednesday</div>
+        <div class="calendar-day-header">Thursday</div>
+        <div class="calendar-day-header">Friday</div>
+        <div class="calendar-day-header">Saturday</div>
+
+        <!-- Calendar days -->
+        {{ range .CalendarDays }}
+        <div class="calendar-day {{ if .IsOtherMonth }}other-month{{ end }} {{ if .IsToday }}today{{ end }}">
+            <div class="day-number">{{ .Day }}</div>
+            {{ range .Events }}
+            <div class="event {{ if .AllDay }}all-day{{ end }}" onclick="showEventDetails('{{ .UID }}')" title="{{ .Title }}">
+                {{ if .AllDay }}●{{ else }}{{ .StartTimeFormatted }}{{ end }} {{ .Title }}
+            </div>
+            {{ end }}
+        </div>
+        {{ end }}
+    </div>
+
+    <!-- Upcoming Events -->
+    <div class="upcoming-events">
+        <h4 class="mb-3">Upcoming Events</h4>
+        {{ if eq (len .UpcomingEvents) 0 }}
+        <div class="alert alert-info">No upcoming events</div>
+        {{ else }}
+        <div class="row">
+            {{ range .UpcomingEvents }}
+            <div class="col-md-6 mb-3">
+                <div class="card event-card {{ if .AllDay }}all-day{{ end }}">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ .Title }}</h5>
+                        <p class="text-muted mb-2">
+                            <i class="bi bi-calendar"></i>
+                            {{ if .AllDay }}
+                                {{ .StartTime.Format "Monday, January 2, 2006" }}
+                            {{ else }}
+                                {{ .StartTime.Format "Mon, Jan 2 at 3:04 PM" }}
+                            {{ end }}
+                        </p>
+                        {{ if .Location }}
+                        <p class="text-muted mb-2">
+                            <i class="bi bi-geo-alt"></i> {{ .Location }}
+                        </p>
+                        {{ end }}
+                        {{ if .Description }}
+                        <p class="card-text">{{ .Description }}</p>
+                        {{ end }}
+                    </div>
+                </div>
+            </div>
+            {{ end }}
+        </div>
+        {{ end }}
+    </div>
+</div>
+
+<!-- Event Details Modal -->
+<div class="modal fade" id="eventModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content event-modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <h5 class="modal-title" id="eventTitle"></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p><strong>When:</strong> <span id="eventTime"></span></p>
+                <p><strong>Where:</strong> <span id="eventLocation"></span></p>
+                <p><strong>Details:</strong></p>
+                <p id="eventDescription"></p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
