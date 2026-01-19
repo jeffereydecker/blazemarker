@@ -15,6 +15,6 @@ require (
 )
 
 require (
-	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721023413-f4c6ed51da8c
+	github.com/jeffereydecker/blazemarker/blaze_log v0.0.1
 	golang.org/x/image v0.18.0 // indirect
 )

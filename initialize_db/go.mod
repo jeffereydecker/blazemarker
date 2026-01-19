@@ -4,10 +4,10 @@ go 1.22.1
 
 
 require (
-	github.com/jeffereydecker/blazemarker/blaze_db v0.0.0-00010101000000-000000000000
-	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721140226-fd4ad63d62d4
-	github.com/jeffereydecker/blazemarker/blog_db v0.0.0-20240721140226-fd4ad63d62d4
-	github.com/jeffereydecker/blazemarker/gallery_db v0.0.0-20240721140226-fd4ad63d62d4
+	github.com/jeffereydecker/blazemarker/blaze_db v0.0.1
+	github.com/jeffereydecker/blazemarker/blaze_log v0.0.1
+	github.com/jeffereydecker/blazemarker/blog_db v0.0.1
+	github.com/jeffereydecker/blazemarker/gallery_db v0.0.1
 	gorm.io/driver/sqlite v1.5.6
 	gorm.io/gorm v1.25.11
 )

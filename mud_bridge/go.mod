@@ -9,9 +9,9 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0 // indirect
-	github.com/jeffereydecker/blazemarker/chat_db v0.0.0 // indirect
-	github.com/jeffereydecker/blazemarker/mud_client v0.0.0-20260118020357-8497dd466116 // indirect
+	github.com/jeffereydecker/blazemarker/blaze_log v0.0.1
+	github.com/jeffereydecker/blazemarker/chat_db v0.0.1
+	github.com/jeffereydecker/blazemarker/mud_client v0.0.1
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/josharian/intern v1.0.0 // indirect

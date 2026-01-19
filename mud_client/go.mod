@@ -4,8 +4,8 @@ go 1.22.1
 
 require (
 	github.com/chromedp/chromedp v0.11.2
-	github.com/jeffereydecker/blazemarker/blaze_log v0.0.0
-	github.com/jeffereydecker/blazemarker/chat_db v0.0.0
+	github.com/jeffereydecker/blazemarker/blaze_log v0.0.1
+	github.com/jeffereydecker/blazemarker/chat_db v0.0.1
 )
 
 require (
