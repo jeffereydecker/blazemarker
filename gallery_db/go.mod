@@ -1,6 +1,5 @@
 module github.com/jeffereydecker/blazemarker/gallery_db
 
-
 go 1.22.1
 
 require (

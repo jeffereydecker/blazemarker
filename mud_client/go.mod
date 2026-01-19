@@ -1,11 +1,12 @@
 module github.com/jeffereydecker/blazemarker/mud_client
 
-go 1.22.1
+go 1.23
 
 require (
 	github.com/chromedp/chromedp v0.11.2
 	github.com/jeffereydecker/blazemarker/blaze_log v0.0.1
 	github.com/jeffereydecker/blazemarker/chat_db v0.0.1
+	gorm.io/gorm v1.25.12
 )
 
 require (
@@ -20,6 +21,4 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	gorm.io/gorm v1.25.12 // indirect
 )
-

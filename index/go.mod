@@ -30,4 +30,3 @@ require (
 	golang.org/x/text v0.16.0 // indirect
 	gorm.io/driver/sqlite v1.5.6 // indirect
 )
-

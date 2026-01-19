@@ -1,3 +1,9 @@
+github.com/jeffereydecker/blazemarker/blaze_email v0.0.1 h1:fac8UB3SZPyjDnoTTYNu3/WQgkM9vZZZvZw0fjPrq0E=
+github.com/jeffereydecker/blazemarker/blaze_email v0.0.1/go.mod h1:1pr9h0PvBtB8f3h0sk+yPlhUNhrHOEFaQXEtDuv2JP8=
+github.com/jeffereydecker/blazemarker/blaze_log v0.0.1 h1:gu4QhWgHiGNWn5XzdLbD0fcbchkdRVELMYrhlmfeoI0=
+github.com/jeffereydecker/blazemarker/blaze_log v0.0.1/go.mod h1:HpCFydXNUKMRJwhn+1XLndA8OCHYcmXMaCKl4KqAkWo=
+github.com/jeffereydecker/blazemarker/user_db v0.0.1 h1:AdkFwrCyhQSOgGqowX5Y+qmHvaeGAynCECPbSsyCuf8=
+github.com/jeffereydecker/blazemarker/user_db v0.0.1/go.mod h1:ggp1b7xK2uivaQzHMp23kE0X9uozDcf1bsviszLx45A=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
 github.com/jinzhu/now v1.1.5 h1:/o9tlHleP7gOFmsnYNz3RGnqzefHA47wQpKrrdTIwXQ=

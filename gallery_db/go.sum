@@ -1,7 +1,7 @@
 github.com/disintegration/imaging v1.6.2 h1:w1LecBlG2Lnp8B3jk5zSuNqd7b4DXhcjwek1ei82L+c=
 github.com/disintegration/imaging v1.6.2/go.mod h1:44/5580QXChDfwIclfc/PCwrr44amcmDAg8hxG0Ewe4=
-github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721023413-f4c6ed51da8c h1:2jjiWaPDAIPB/Ut9dTbKw4/TfUysZyIt71VBeRZn5ZQ=
-github.com/jeffereydecker/blazemarker/blaze_log v0.0.0-20240721023413-f4c6ed51da8c/go.mod h1:AxMZ9nPdqJWbvmZwj0dcIBX7WAoNLqxc/AtYcMRvgL4=
+github.com/jeffereydecker/blazemarker/blaze_log v0.0.1 h1:gu4QhWgHiGNWn5XzdLbD0fcbchkdRVELMYrhlmfeoI0=
+github.com/jeffereydecker/blazemarker/blaze_log v0.0.1/go.mod h1:HpCFydXNUKMRJwhn+1XLndA8OCHYcmXMaCKl4KqAkWo=
 github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD/E=
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
 github.com/jinzhu/now v1.1.5 h1:/o9tlHleP7gOFmsnYNz3RGnqzefHA47wQpKrrdTIwXQ=
