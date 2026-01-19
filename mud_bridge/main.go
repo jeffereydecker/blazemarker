@@ -19,8 +19,10 @@ type Config struct {
 	BlazemarkerURL   string // e.g. "http://localhost:3000" or "https://blazemarker.com"
 	Username         string // Your Blazemarker username
 	Password         string // Your Blazemarker password
-	MudUsername      string // Your funklord username
-	MudPassword      string // Your funklord password
+	MudUsername      string // Your Blazemarker funklord username
+	MudPassword      string // Your Blazemarker funklord password
+	MudWebUsername   string // Your funklord.com username
+	MudWebPassword   string // Your funklord.com password
 	KeepAliveMinutes int    // How often to send keep-alive command (0 = disabled)
 }
 
@@ -43,15 +45,17 @@ func main() {
 	blazemarkerURL := flag.String("url", "http://localhost:3000", "Blazemarker server URL")
 	username := flag.String("user", "", "Your Blazemarker username")
 	password := flag.String("pass", "", "Your Blazemarker password")
-	mudUsername := flag.String("mud-user", "", "Your funklord username")
-	mudPassword := flag.String("mud-pass", "", "Your funklord password")
+	mudUsername := flag.String("mud-user", "", "Your Blazemarker funklord username")
+	mudPassword := flag.String("mud-pass", "", "Your Blazemarker funklord password")
+	mudWebUsername := flag.String("mud-web-user", "", "Your funklord.com username")
+	mudWebPassword := flag.String("mud-web-pass", "", "Your funklord.com password")
 	keepAlive := flag.Int("keep-alive", 5, "Send keep-alive command every N minutes (0=disabled)")
 	flag.Parse()
 
-	if *username == "" || *password == "" || *mudUsername == "" || *mudPassword == "" {
-		fmt.Println("Usage: mud_bridge -user <username> -pass <password> -mud-user <mud_username> -mud-pass <mud_password>")
+	if *username == "" || *password == "" || *mudUsername == "" || *mudPassword == "" || *mudWebUsername == "" || *mudWebPassword == "" {
+		fmt.Println("Usage: mud_bridge -user <username> -pass <password> -mud-user <blazemarker_funklord_username> -mud-pass <blazemarker_funklord_password> -mud-web-user <funklord.com_username> -mud-web-pass <funklord.com_password>")
 		fmt.Println("\nExample:")
-		fmt.Println("  mud_bridge -user jdecker -pass mypass -mud-user jdecker -mud-pass mudpass")
+		fmt.Println("  mud_bridge -user jdecker -pass mypass -mud-user funklord -mud-pass bm_funklord_pw -mud-web-user choff -mud-web-pass mud_pw")
 		fmt.Println("\nOptional flags:")
 		fmt.Println("  -url <url>          Blazemarker server URL (default: http://localhost:3000)")
 		fmt.Println("  -keep-alive <mins>  Send keep-alive every N minutes (default: 5, 0=disabled)")
@@ -64,6 +68,8 @@ func main() {
 		Password:         *password,
 		MudUsername:      *mudUsername,
 		MudPassword:      *mudPassword,
+		MudWebUsername:   *mudWebUsername,
+		MudWebPassword:   *mudWebPassword,
 		KeepAliveMinutes: *keepAlive,
 	}
 
@@ -74,9 +80,11 @@ func main() {
 		return
 	}
 
+	// Set lastMsgTime to now so only new messages are processed after startup
 	bridge := &MudBridge{
-		config:     config,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		config:      config,
+		httpClient:  &http.Client{Timeout: 30 * time.Second},
+		lastMsgTime: time.Now(),
 	}
 
 	fmt.Printf("Starting MUD Bridge...\n")
@@ -87,7 +95,21 @@ func main() {
 	}
 
 	// Create and start MUD client
-	bridge.mudClient = mud_client.NewMUDClient(db, config.Username, config.MudUsername, config.MudPassword)
+	bridge.mudClient = mud_client.NewMUDClient(db, config.Username, config.MudWebUsername, config.MudWebPassword)
+	// Set callback to send MUD output to Blazemarker chat
+	bridge.mudClient.OnMudOutput = func(msg string) {
+		if msg != "" {
+			fmt.Printf("[MUD->Blazemarker] (callback) %q\n", msg)
+			err := bridge.sendMessage(msg)
+			if err != nil {
+				fmt.Printf("Failed to send MUD output to Blazemarker: %v\n", err)
+			} else {
+				fmt.Printf("Successfully sent to Blazemarker: %q\n", msg)
+			}
+		} else {
+			fmt.Println("[MUD->Blazemarker] (callback) called with empty message")
+		}
+	}
 	err = bridge.mudClient.Start()
 	if err != nil {
 		fmt.Printf("Failed to start MUD client: %v\n", err)
@@ -131,11 +153,42 @@ func (b *MudBridge) pollForCommands() {
 					if err != nil {
 						fmt.Printf("Error sending command to MUD: %v\n", err)
 					}
+					// Mark this message as read so it is not resent after restart
+					markErr := b.markMessagesAsRead(msg.FromUsername)
+					if markErr != nil {
+						fmt.Printf("Error marking message as read: %v\n", markErr)
+					}
 					b.lastMsgTime = msg.CreatedAt
 				}
 			}
 		}
 	}
+}
+
+// markMessagesAsRead marks all messages from fromUsername as read for the current user
+func (b *MudBridge) markMessagesAsRead(fromUsername string) error {
+	url := fmt.Sprintf("%s/api/chat/mark-read", b.config.BlazemarkerURL)
+	payload := map[string]string{"from_username": fromUsername}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(b.config.Username, b.config.Password)
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
+	}
+	return nil
 }
 
 // keepAlive sends periodic commands to keep funklord session active
@@ -183,8 +236,9 @@ func (b *MudBridge) sendMessage(content string) error {
 	url := fmt.Sprintf("%s/api/chat/send", b.config.BlazemarkerURL)
 
 	payload := map[string]string{
-		"to_username": b.config.Username,
-		"content":     content,
+		"to_username":   b.config.Username,
+		"from_username": "funklord",
+		"content":       content,
 	}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
@@ -197,7 +251,8 @@ func (b *MudBridge) sendMessage(content string) error {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth(b.config.Username, b.config.Password)
+	// Authenticate as funklord for sending MUD output
+	req.SetBasicAuth(b.config.MudUsername, b.config.MudPassword)
 
 	resp, err := b.httpClient.Do(req)
 	if err != nil {

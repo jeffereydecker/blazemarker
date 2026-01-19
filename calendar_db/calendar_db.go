@@ -604,14 +604,20 @@ func DeleteEvent(config CalendarConfig, uid string, deleteSeries bool, instanceD
 		}
 
 		// Add EXDATE property
-		// Format: EXDATE:20260128 or EXDATE:20260128T220000Z depending on if it's all-day
-		exdateValue := instanceDate.Format("20060102")
-
-		// Check if the event has a time component
+		// Match EXDATE format to DTSTART (date for all-day, datetime for timed)
 		dtstart := eventComponent.Props.Get(ical.PropDateTimeStart)
-		if dtstart != nil && len(dtstart.Value) > 8 {
-			// Has time component, use full datetime
-			exdateValue = instanceDate.Format("20060102T150405Z")
+		exdateValue := ""
+		if dtstart != nil {
+			if len(dtstart.Value) == 8 {
+				// All-day event (YYYYMMDD)
+				exdateValue = instanceDate.Format("20060102")
+			} else {
+				// Timed event (YYYYMMDDTHHMMSSZ)
+				exdateValue = instanceDate.UTC().Format("20060102T150405Z")
+			}
+		} else {
+			// Fallback: use date only
+			exdateValue = instanceDate.Format("20060102")
 		}
 
 		exdateProp := ical.NewProp("EXDATE")
@@ -619,6 +625,7 @@ func DeleteEvent(config CalendarConfig, uid string, deleteSeries bool, instanceD
 		eventComponent.Props.Add(exdateProp)
 
 		logger.Info("Adding EXDATE to recurring event", "uid", originalUID, "exdate", exdateValue)
+		logger.Debug("iCalendar data before update", "ical", debugICalString(cal))
 
 		// Update the event
 		err = UpdateEvent(config, originalUID, cal)

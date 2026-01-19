@@ -51,7 +51,8 @@ type MUDClient struct {
 	db             *gorm.DB
 	mudUsername    string
 	mudPassword    string
-	userForChat    string // The Blazemarker user this MUD is for
+	userForChat    string       // The Blazemarker user this MUD is for
+	OnMudOutput    func(string) // Callback for new MUD output
 }
 
 // NewMUDClient creates a new MUD client instance
@@ -185,14 +186,17 @@ func (m *MUDClient) checkForNewOutput() {
 		var newMessages []string
 		err = chromedp.Run(m.ctx,
 			chromedp.Evaluate(fmt.Sprintf(`
-				Array.from(document.querySelectorAll('#TextReceived > *'))
-					.slice(%d)
-					.map(el => el.textContent)
-			`, m.lastChildCount), &newMessages),
+					  Array.from(document.querySelectorAll('#TextReceived > *'))
+					  .slice(%d)
+					  .map(el => el.textContent)
+			   `, m.lastChildCount), &newMessages),
 		)
 		if err == nil && len(newMessages) > 0 {
 			for _, msg := range newMessages {
 				if msg != "" {
+					if m.OnMudOutput != nil {
+						m.OnMudOutput(msg)
+					}
 					_, err = chat_db.SendMessage(m.db, "funklord", m.userForChat, msg)
 					if err != nil {
 						logger.Error("Failed to send MUD output to chat: " + err.Error())
@@ -205,6 +209,7 @@ func (m *MUDClient) checkForNewOutput() {
 			return
 		}
 	}
+	// (text diff fallback removed by user request)
 }
 
 // SendCommand sends a command from the user to the MUD

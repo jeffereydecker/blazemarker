@@ -105,6 +105,7 @@
 let currentConversation = null;
 let currentUsername = null;
 let conversations = [];
+let previousUnreadCounts = {};
 let messages = [];
 let pollInterval = null;
 
@@ -133,7 +134,17 @@ async function loadConversations() {
         const response = await fetch('/api/chat/conversations', { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to load conversations');
         
-        conversations = await response.json();
+        const newConversations = await response.json();
+        // Play notification sound if unread count increases for any conversation (not currently open)
+        newConversations.forEach(conv => {
+            const prev = previousUnreadCounts[conv.username] || 0;
+            // Only play sound if not the currently open conversation
+            if (conv.unread_count > prev && conv.username !== currentConversation) {
+                playChatNotificationSound();
+            }
+            previousUnreadCounts[conv.username] = conv.unread_count;
+        });
+        conversations = newConversations;
         renderConversations();
     } catch (error) {
         console.error('Error loading conversations:', error);
@@ -143,6 +154,19 @@ async function loadConversations() {
                 <button class="btn btn-sm btn-outline-primary" onclick="loadConversations()">Retry</button>
             </div>
         `;
+    }
+}
+
+// Play chat notification sound (global)
+function playChatNotificationSound() {
+    const audio = document.getElementById('chatNotificationSound');
+    if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(err => {
+            console.warn('Chat notification sound failed to play:', err);
+            // Try to reload and play again (may help in some browsers)
+            audio.load();
+        });
     }
 }
 
@@ -347,6 +371,30 @@ function getCurrentUsername() {
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     currentUsername = getCurrentUsername();
+    // Add notification sound element
+    if (!document.getElementById('chatNotificationSound')) {
+        const audio = document.createElement('audio');
+        audio.id = 'chatNotificationSound';
+        audio.src = '/static/sounds/chat_notification.mp3';
+        audio.preload = 'auto';
+        document.body.appendChild(audio);
+    }
+    // Unlock audio playback on first user interaction
+    function unlockAudio() {
+         const audio = document.getElementById('chatNotificationSound');
+         if (audio) {
+             audio.muted = true;
+             audio.play().finally(() => {
+                 audio.pause();
+                 audio.currentTime = 0;
+                 audio.muted = false;
+             });
+         }
+         window.removeEventListener('click', unlockAudio);
+         window.removeEventListener('keydown', unlockAudio);
+     }
+     window.addEventListener('click', unlockAudio);
+     window.addEventListener('keydown', unlockAudio);
     loadConversations();
     
     // Message form handler

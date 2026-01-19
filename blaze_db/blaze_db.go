@@ -26,7 +26,7 @@ func initializeDBOnce() {
 	// Open SQLite database
 	var err error
 	if db == nil {
-		db, err = gorm.Open(sqlite.Open("data/blazemarker.db"), &gorm.Config{
+		db, err = gorm.Open(sqlite.Open("../data/blazemarker.db"), &gorm.Config{
 			Logger: logger.Default.LogMode(logger.Error), // Only log errors, not SQL queries
 		})
 		if err != nil {

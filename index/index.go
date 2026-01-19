@@ -18,9 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
-
 	"github.com/jeffereydecker/blazemarker/blaze_db"
 	"github.com/jeffereydecker/blazemarker/blaze_email"
 	"github.com/jeffereydecker/blazemarker/blaze_log"
@@ -31,6 +28,8 @@ import (
 	"github.com/jeffereydecker/blazemarker/push_db"
 	"github.com/jeffereydecker/blazemarker/user_db"
 	"github.com/tg123/go-htpasswd"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // Aliases
@@ -43,6 +42,14 @@ var logger *slog.Logger = blaze_log.GetLogger()
 var db *gorm.DB = blaze_db.GetDB()
 var adminUsers map[string]bool
 var calendarConfig calendar_db.CalendarConfig
+
+func getBasePath() string {
+	exePath, err := os.Executable()
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Dir(exePath)
+}
 
 // Session management
 type Session struct {
@@ -59,13 +66,12 @@ var (
 // loadAdminUsers loads the list of admin users from config file
 func loadAdminUsers() {
 	adminUsers = make(map[string]bool)
-
-	data, err := os.ReadFile("../config/admins.txt")
+	adminPath := filepath.Join(getBasePath(), "../config", "admins.txt")
+	data, err := os.ReadFile(adminPath)
 	if err != nil {
 		logger.Error("Failed to load admin users file", "error", err)
 		return
 	}
-
 	lines := strings.Split(string(data), "\n")
 	for _, line := range lines {
 		username := strings.TrimSpace(line)
@@ -86,15 +92,14 @@ func loadCalendarConfig() {
 
 	// Fall back to config file if env vars not set
 	if serverURL == "" || username == "" || password == "" {
-		data, err := os.ReadFile("../config/caldav.conf")
+		caldavPath := filepath.Join(getBasePath(), "../config", "caldav.conf")
+		data, err := os.ReadFile(caldavPath)
 		if err != nil {
 			logger.Error("Failed to load CalDAV config file", "error", err)
 			return
 		}
-
 		lines := strings.Split(string(data), "\n")
 		config := make(map[string]string)
-
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
@@ -1199,7 +1204,8 @@ func addUserToHtpasswd(username, password string) error {
 
 	// Append user to htpasswd file
 	newLine := username + ":" + string(hashedBytes) + "\n"
-	file, err := os.OpenFile(htpasswdPath, os.O_APPEND|os.O_WRONLY, 0600)
+	htpasswdPathAbs := filepath.Join(getBasePath(), htpasswdPath)
+	file, err := os.OpenFile(htpasswdPathAbs, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -1211,7 +1217,7 @@ func addUserToHtpasswd(username, password string) error {
 
 // updateUserPasswordInHtpasswd updates a user's password in htpasswd file
 func updateUserPasswordInHtpasswd(username, newPassword string) error {
-	htpasswdPath := "../blaze_auth/.htpasswd"
+	htpasswdPath := filepath.Join(getBasePath(), "../blaze_auth", ".htpasswd")
 
 	// Hash new password using bcrypt
 	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)

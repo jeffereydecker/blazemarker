@@ -1,0 +1,17 @@
+go 1.25.5
+
+use (
+	./blaze_db
+	./blaze_email
+	./blaze_log
+	./blog_db
+	./calendar_db
+	./chat_db
+	./gallery_db
+	./index
+	./initialize_db
+	./mud_bridge
+	./mud_client
+	./push_db
+	./user_db
+)
