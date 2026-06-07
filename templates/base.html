@@ -53,25 +53,25 @@
     overflow-y: auto;
     z-index: 1000;
   }
-  
+
   /* Larger touch targets */
   .navbar-nav .nav-link {
     padding: 14px 20px;
     font-size: 1.1rem;
     border-bottom: 1px solid rgba(255,255,255,0.1);
   }
-  
+
   /* Last item no border */
   .navbar-nav .nav-item:last-child .nav-link {
     border-bottom: none;
   }
-  
+
   /* Better hover/active states on mobile */
   .navbar-nav .nav-link:active,
   .navbar-nav .nav-link:focus {
     background-color: rgba(255,255,255,0.15);
   }
-  
+
   /* Smooth scrolling for long menus */
   .navbar-collapse {
     scroll-behavior: smooth;
@@ -185,9 +185,9 @@
               // Separate online and offline users
               const onlineUsers = users.filter(u => u.is_online);
               const offlineUsers = users.filter(u => !u.is_online);
-              
+
               let html = '';
-              
+
               // Show online users first
               if (onlineUsers.length > 0) {
                 html += '<div style="font-size: 11px; font-weight: 600; color: #10b981; margin: 8px 0 4px 0; text-transform: uppercase;">Online</div>';
@@ -207,7 +207,7 @@
                   `;
                 }).join('');
               }
-              
+
               // Show offline users
               if (offlineUsers.length > 0) {
                 html += '<div style="font-size: 11px; font-weight: 600; color: #888; margin: 12px 0 4px 0; text-transform: uppercase;">Offline</div>';
@@ -227,7 +227,7 @@
                   `;
                 }).join('');
               }
-              
+
               usersList.innerHTML = html;
             }
           })
@@ -257,250 +257,24 @@
         }
       }, 30000);
     })();
-  </script>
 
-  <!-- PWA Service Worker Registration -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/service-worker.js')
-          .then((registration) => {
-            console.log('Service Worker registered:', registration.scope);
-            
-            // Check for updates periodically
-            setInterval(() => {
-              registration.update();
-            }, 60000); // Check every minute
-            
-            // Auto-subscribe if permission already granted, otherwise wait for user action
-            if (Notification.permission === 'granted') {
-              subscribeToPushNotifications(registration);
-            }
-          })
-          .catch((error) => {
-            console.error('Service Worker registration failed:', error);
-          });
-      });
+    </script>
 
-      // Listen for service worker updates
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        console.log('New service worker activated, reloading...');
-        window.location.reload();
-      });
-    }
+    <script>
 
-    // Push notification subscription
-    async function requestPushNotificationPermission(registration) {
-      if (!('PushManager' in window)) {
-        console.log('Push notifications not supported');
-        return;
-      }
 
-      try {
-        const permission = await Notification.requestPermission();
-        
-        if (permission === 'granted') {
-          console.log('Notification permission granted');
-          await subscribeToPushNotifications(registration);
-        } else {
-          console.log('Notification permission denied');
-        }
-      } catch (error) {
-        console.error('Error requesting notification permission:', error);
-      }
-    }
-
-    async function subscribeToPushNotifications(registration) {
-      try {
-        // Get VAPID public key from server
-        const response = await fetch('/api/push/vapid-key');
-        const data = await response.json();
-        const vapidPublicKey = data.publicKey;
-
-        // Convert VAPID key
-        const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
-
-        // Subscribe to push
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: convertedVapidKey
-        });
-
-        // Send subscription to server
-        await fetch('/api/push/subscribe', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            endpoint: subscription.endpoint,
-            keys: {
-              p256dh: arrayBufferToBase64(subscription.getKey('p256dh')),
-              auth: arrayBufferToBase64(subscription.getKey('auth'))
-            }
-          })
-        });
-
-        console.log('Push subscription saved');
-      } catch (error) {
-        console.error('Error subscribing to push notifications:', error);
-      }
-    }
-
-    function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - base64String.length % 4) % 4);
-      const base64 = (base64String + padding)
-        .replace(/\-/g, '+')
-        .replace(/_/g, '/');
-
-      const rawData = window.atob(base64);
-      const outputArray = new Uint8Array(rawData.length);
-
-      for (let i = 0; i < rawData.length; ++i) {
-        outputArray[i] = rawData.charCodeAt(i);
-      }
-      return outputArray;
-    }
-
-    function arrayBufferToBase64(buffer) {
-      const bytes = new Uint8Array(buffer);
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return window.btoa(binary);
-    }
-
-    // Handle install prompt for PWA
-    let deferredPrompt;
-    window.addEventListener('beforeinstallprompt', (e) => {
-      // Prevent the mini-infobar from appearing on mobile
-      e.preventDefault();
-      // Store the event for later use
-      deferredPrompt = e;
-      // Could show a custom install button here
-      console.log('PWA install prompt available');
-    });
-
-    window.addEventListener('appinstalled', () => {
-      console.log('PWA was installed');
-      deferredPrompt = null;
-    });
-
-    // Chat unread count polling with sound notifications
-    (function() {
-      const badge = document.getElementById('chat-unread-badge');
-      let previousUnreadCount = null; // Start as null to avoid playing on first load
-      let soundEnabled = true;
-      let isFirstCheck = true; // Don't play sound on first check
-      let lastSoundTime = 0; // Track when we last played a sound
-      const SOUND_COOLDOWN = 5000; // Don't play sounds more than once every 5 seconds
-      
-      // Sound notification system
-      const notificationSound = new Audio('/static/sounds/notification.mp3');
-      notificationSound.volume = 0.4; // 40% volume - adjust as needed
-      
-      // Test if sound file loads
-      notificationSound.addEventListener('error', (e) => {
-        console.error('Failed to load notification sound:', e);
-        soundEnabled = false;
-      });
-      
-      notificationSound.addEventListener('canplaythrough', () => {
-        console.log('Notification sound loaded successfully');
-      });
-      
-      function playNotificationSound() {
-        // Check cooldown - prevent rapid-fire sounds
-        const now = Date.now();
-        if (now - lastSoundTime < SOUND_COOLDOWN) {
-          console.log('Sound on cooldown - ignoring notification');
-          return;
-        }
-        
-        // Check if sounds are enabled
-        const userPref = localStorage.getItem('soundNotifications');
-        if (userPref === 'false' || !soundEnabled) {
-          console.log('Sound disabled by user preference or error');
-          return;
-        }
-        
-        // Don't play sound if user is on the chat page
-        if (window.location.pathname === '/chat') {
-          console.log('Sound disabled - user is on chat page');
-          return;
-        }
-        
-        console.log('Playing notification sound');
-        lastSoundTime = now;
-        notificationSound.currentTime = 0;
-        notificationSound.play()
-          .then(() => console.log('Sound played successfully'))
-          .catch(err => {
-            console.log('Sound blocked by browser (need user interaction first):', err);
-            // After first user interaction, sounds will work
-          });
-        
-        // Also vibrate on mobile devices
-        if ('vibrate' in navigator) {
-          navigator.vibrate(200);
-        }
-      }
-      
-      async function updateUnreadCount() {
-        try {
-          const response = await fetch('/api/chat/unread-count', { 
-            credentials: 'include' 
+    async function updateUnreadCount() {
+    try {
+          const response = await fetch('/api/chat/unread-count', {
+            credentials: 'include'
           });
           if (response.ok) {
             const data = await response.json();
             const count = data.count;
-            
-            // Play sound only if:
-            // 1. Not the first check
-            // 2. Count increased from a value >= 0 (not null)
-            // 3. New count is > 0 (actually have unread messages)
-            // 4. Count went UP (previous was lower)
-            if (!isFirstCheck && 
-                previousUnreadCount !== null && 
-                count > 0 && 
-                count > previousUnreadCount) {
-              console.log('New message detected! Previous:', previousUnreadCount, 'Current:', count);
-              playNotificationSound();
-            }
-            
-            isFirstCheck = false;
-            previousUnreadCount = count;
-            
-            if (count > 0) {
-              badge.textContent = count > 99 ? '99+' : count;
-              badge.style.display = 'inline-block';
-            } else {
-              badge.style.display = 'none';
-            }
-          }
-        } catch (error) {
-          console.error('Failed to fetch unread count:', error);
-        }
-      }
-      
-      // Enable sound on first user interaction
-      const enableSound = () => {
-        notificationSound.play().then(() => {
-          notificationSound.pause();
-          notificationSound.currentTime = 0;
-          console.log('Sound unlocked - notifications will play');
-        }).catch(() => {});
-        document.removeEventListener('click', enableSound);
-      };
-      document.addEventListener('click', enableSound, { once: true });
-      
-      // Update immediately and then every 10 seconds
-      updateUnreadCount();
-      setInterval(updateUnreadCount, 10000);
-    })();
+
+
   </script>
-   
+
 </body>
 
 </html>

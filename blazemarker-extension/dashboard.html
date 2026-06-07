@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Blazemarker Dashboard</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div id="septa-info" style="position: absolute; bottom: 80px; left: 20px; max-width: 320px; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 12px; font-size: 0.95em; color: #fff;">
+      <h3 style="margin: 0 0 8px; font-size: 1.1em;">SEPTA to Center City</h3>
+      <ul id="septa-to-suburban" style="list-style: none; padding: 0; margin: 0;"></ul>
+      <h3 style="margin: 16px 0 8px; font-size: 1.1em;">SEPTA to Chestnut Hill West</h3>
+      <ul id="septa-to-chw" style="list-style: none; padding: 0; margin: 0;"></ul>
+    </div>
+  <div id="dashboard">
+    <div id="center">
+      <div id="greeting"></div>
+      <div id="time"></div>
+    </div>
+    <div id="top-right">
+      <div id="weather"></div>
+    </div>
+    <div id="bottom-left">
+      <div id="users">
+        <h2>Online Users</h2>
+        <ul id="user-list"></ul>
+      </div>
+    </div>
+    <div id="bottom-right">
+      <div id="todos">
+        <h2>Todos</h2>
+        <input id="daily-focus" placeholder="What is your main focus today?">
+        <ul id="todo-list"></ul>
+        <input type="text" id="new-todo" placeholder="Add a todo...">
+        <button id="add-todo">Add</button>
+      </div>
+    </div>
+    <div id="bottom-center">
+      <div id="quote"></div>
+    </div>
+    <div id="article-list-container" style="display:none;">
+      <h2>Recent Articles</h2>
+      <ul id="article-list"></ul>
+    </div>
+    <button id="show-articles-btn" title="Show recent articles" style="position:fixed;bottom:24px;right:24px;z-index:10;width:48px;height:48px;border-radius:50%;background:#fff;border:none;box-shadow:0 2px 8px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/></svg>
+    </button>
+  </div>
+  <script src="dashboard.js"></script>
+</body>
+</html>
+
+

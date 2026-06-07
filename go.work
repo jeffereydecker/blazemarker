@@ -10,8 +10,7 @@ use (
 	./gallery_db
 	./index
 	./initialize_db
-	./mud_bridge
-	./mud_client
 	./push_db
 	./user_db
+	./todo_db
 )

@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Blazemarker Dashboard",
+  "version": "1.0",
+  "description": "A dashboard extension for Blazemarker with background photos, recent articles, online users, todos and SEPTA train times.",
+
+    "permissions": ["storage", "notifications", "geolocation", "http://localhost:3000/*", "https://blazemarker.com/*"],
+    "host_permissions": [
+        "http://localhost:3000/*",
+        "https://blazemarker.com/*",
+        "https://www3.septa.org/*"
+    ],
+    "chrome_url_overrides": { "newtab": "dashboard.html" },
+    "icons": {
+        "16": "favicon-16x16.png",
+        "32": "favicon-32x32.png",
+        "48": "favicon-48x48.png",
+        "128": "icon-128x128.png"
+    }
+}

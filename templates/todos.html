@@ -1,0 +1,163 @@
+{{define "scripts"}}{{end}}
+{{ define "nav_body" }}
+
+<style>
+.todo-list li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #eee; transition: background 0.2s; position: relative; }
+.todo-list li.completed span { text-decoration: line-through; color: #aaa; opacity: 0.7; }
+.todo-list li .edit-input { font-size: 1em; padding: 2px 6px; margin-right: 8px; }
+.todo-list li button, .todo-list li .save-btn { margin-left: 8px; border: none; background: #eee; color: #333; border-radius: 4px; padding: 2px 10px; cursor: pointer; transition: background 0.2s; }
+.todo-list li button:hover, .todo-list li .save-btn:hover { background: #d1d5db; }
+.todo-list li .delete-btn { background: none; color: #f87171; padding: 2px; margin-left: 4px; border: none; cursor: pointer; display: none; }
+.todo-list li:hover .delete-btn { display: inline-block; }
+.todo-list li .delete-btn svg { display: block; }
+.todo-list li .spinner { margin-left: 8px; width: 16px; height: 16px; border: 2px solid #ccc; border-top: 2px solid #667eea; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+#todo-form { display: flex; gap: 8px; margin-bottom: 18px; }
+#todo-form input { flex: 1; padding: 6px 10px; border-radius: 4px; border: 1px solid #ccc; }
+#todo-form button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; padding: 6px 18px; font-weight: 600; }
+#todo-form button:hover { background: #667eea; }
+.todo-list { list-style: none; padding: 0; margin: 0; }
+.todo-empty { color: #aaa; text-align: center; margin-top: 24px; }
+</style>
+<div class="container">
+  <h2>Your Todos</h2>
+  <form id="todo-form">
+    <input id="todo-text" placeholder="New todo" autocomplete="off" />
+    <button type="submit">Add</button>
+  </form>
+  <ul id="todo-list" class="todo-list"></ul>
+  <div id="todo-loading" style="display:none;text-align:center;margin:20px 0;">
+    <span class="spinner"></span>
+  </div>
+</div>
+
+<script>
+
+let editingId = null;
+async function fetchTodos(){
+  document.getElementById('todo-loading').style.display = '';
+  const res = await fetch('/api/todos', {credentials: 'same-origin'});
+  document.getElementById('todo-loading').style.display = 'none';
+  const list = document.getElementById('todo-list');
+  list.innerHTML = '';
+  if(!res.ok) {
+    list.innerHTML = '<li class="todo-empty">Failed to load todos</li>';
+    return;
+  }
+  const todos = await res.json();
+  if(!todos.length) {
+    list.innerHTML = '<li class="todo-empty">No todos yet!</li>';
+    return;
+  }
+  todos.forEach(t => {
+    const li = document.createElement('li');
+    li.dataset.id = t.ID;
+    if(t.completed) li.classList.add('completed');
+    // Checkbox
+    const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = !!t.completed;
+    chk.title = 'Mark complete';
+    chk.addEventListener('change', async ()=>{
+      // Optimistically update UI
+      chk.disabled = true;
+      if (chk.checked) {
+        li.classList.add('completed');
+      } else {
+        li.classList.remove('completed');
+      }
+      // Try to update DB
+      const prevChecked = !chk.checked;
+      const resp = await fetch('/api/todos', {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({id: t.ID, text: t.text, completed: chk.checked})
+      });
+      chk.disabled = false;
+      if (!resp.ok) {
+        // Revert UI if failed
+        chk.checked = prevChecked;
+        if (prevChecked) {
+          li.classList.add('completed');
+        } else {
+          li.classList.remove('completed');
+        }
+        alert('Failed to update todo');
+      }
+    });
+    li.appendChild(chk);
+    // Editable text
+    if(editingId === t.ID) {
+      const input = document.createElement('input');
+      input.value = t.text;
+      input.className = 'edit-input';
+      input.addEventListener('keydown', async e => {
+        if(e.key==='Enter') { await saveEdit(); }
+        if(e.key==='Escape') { editingId = null; fetchTodos(); }
+      });
+      li.appendChild(input);
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Save';
+      saveBtn.className = 'save-btn';
+      saveBtn.onclick = async ()=>{ await saveEdit(); };
+      li.appendChild(saveBtn);
+      input.focus();
+      async function saveEdit(){
+        await updateTodo(t.ID, input.value, t.completed);
+        editingId = null;
+        fetchTodos();
+      }
+    } else {
+      // Always show the text, even if empty string
+      const span = document.createElement('span');
+      span.textContent = (typeof t.text === 'string') ? t.text : '';
+      span.style.cursor = 'pointer';
+      span.title = 'Click to edit';
+      span.onclick = ()=>{ editingId = t.ID; fetchTodos(); };
+      li.appendChild(span);
+    }
+    // Delete icon button
+    const del = document.createElement('button');
+    del.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6V12M10 6V12M2.5 4H13.5M12.5 4V13C12.5 13.5523 12.0523 14 11.5 14H4.5C3.94772 14 3.5 13.5523 3.5 13V4M5.5 4V3C5.5 2.44772 5.94772 2 6.5 2H9.5C10.0523 2 10.5 2.44772 10.5 3V4" stroke="#f87171" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    del.className = 'delete-btn';
+    del.title = 'Delete todo';
+    del.style.background = 'none';
+    del.style.padding = '2px';
+    del.style.marginLeft = '4px';
+    del.style.border = 'none';
+    del.style.cursor = 'pointer';
+    del.addEventListener('click', async ()=>{ del.disabled=true; await deleteTodo(t.ID); fetchTodos(); });
+    li.appendChild(del);
+    list.appendChild(li);
+  });
+}
+
+
+async function addTodo(text){
+  document.getElementById('todo-loading').style.display = '';
+  await fetch('/api/todos',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
+  document.getElementById('todo-loading').style.display = 'none';
+}
+
+async function updateTodo(id, text, completed){
+  document.getElementById('todo-loading').style.display = '';
+  await fetch('/api/todos',{method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, text, completed})});
+  document.getElementById('todo-loading').style.display = 'none';
+}
+
+async function deleteTodo(id){
+  document.getElementById('todo-loading').style.display = '';
+  await fetch('/api/todos?id='+id,{method:'DELETE'});
+  document.getElementById('todo-loading').style.display = 'none';
+}
+
+document.getElementById('todo-form').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const t = document.getElementById('todo-text').value;
+  if(!t.trim()) return;
+  await addTodo(t);
+  document.getElementById('todo-text').value='';
+  fetchTodos();
+});
+
+fetchTodos();
+</script>
+{{ end }}

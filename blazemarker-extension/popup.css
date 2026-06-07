@@ -1,0 +1,177 @@
+body, html {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  font-family: 'Roboto', 'Segoe UI', Arial, sans-serif;
+  color: #fff;
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5); /* For contrast on photo */
+}
+
+#dashboard {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+#center {
+  text-align: center;
+  background: rgba(0,0,0,0.35);
+  border-radius: 16px;
+  padding: 24px 32px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+}
+
+#greeting {
+  font-size: 2.5em;
+  margin-bottom: 10px;
+}
+
+#time {
+  font-size: 6em;
+  font-weight: bold;
+}
+
+#top-right {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  font-size: 1.2em;
+}
+
+#bottom-left, #bottom-right {
+  position: absolute;
+  bottom: 20px;
+  padding: 10px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 8px;
+  max-width: 300px;
+}
+
+#bottom-left {
+  left: 20px;
+}
+
+#bottom-right {
+  right: 20px;
+}
+
+#bottom-center {
+  position: absolute;
+  bottom: 20px;
+  text-align: center;
+  max-width: 80%;
+  font-style: italic;
+  font-size: 1.1em;
+}
+
+#article-list-container {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255,255,255,0.9);
+  color: #222;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  max-height: 80vh;
+  overflow-y: auto;
+  text-shadow: none;
+}
+
+#show-articles-btn {
+  transition: box-shadow 0.2s;
+}
+
+#show-articles-btn:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+
+h2 {
+  margin: 0 0 10px 0;
+  font-size: 1.2em;
+  color: #fff;
+}
+
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+li {
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+a {
+  color: #fff;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+input {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 8px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.8);
+  color: #222;
+}
+
+button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #4caf50;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #388e3c;
+}
+
+#daily-focus {
+  font-style: italic;
+  background: transparent;
+  border-bottom: 1px solid #fff;
+  color: #fff;
+  text-shadow: none;
+}
+
+
+#septa-info h3 {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+#septa-info li {
+  font-size: 0.9em;
+}
+
+/* Todo delete button */
+.todo-delete {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 1.0em;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.todo-delete:hover {
+  background: rgba(255,255,255,0.12);
+}
